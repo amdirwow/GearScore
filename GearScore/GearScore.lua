@@ -280,10 +280,10 @@ GS_ServerStatsCaster = {
 GS_ServerStatsDefense = {
 	{ Key = "armor", Label = "Броня" },
 	{ Key = "defense", Label = "Захист" },
-	{ Key = "resilience", Label = "Устойчивість" },
 	{ Key = "dodge", Label = "Ухилення" , Percent = 1 },
 	{ Key = "parry", Label = "Парирування" , Percent = 1 },
 	{ Key = "block", Label = "Блок" , Percent = 1 },
+	{ Key = "resilience", Label = "Стійкість" },
 }
 GS_ServerStatsProfiles = {
 	{ Key = "primary", Label = "Основні" },
