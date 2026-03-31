@@ -237,9 +237,11 @@ end
 
 function GearScore_GetItemCode(ItemLink)
 	if not ( ItemLink ) then return nil; end
-	local found, _, ItemString = string.find(ItemLink, "^|c%x+|H(.+)|h%[.*%]"); local Table = {}
-	for v in string.gmatch(ItemString, "[^:]+") do tinsert(Table, v); end
-	return Table[2]..":"..Table[3], Table[2]
+	local found, _, ItemString = string.find(ItemLink, "^|c%x+|H(.+)|h%[.*%]")
+	if not ItemString then return nil; end
+	local ItemCode = string.match(ItemString, "^item:(.+)$") or ItemString
+	local ItemId = string.match(ItemCode, "^([^:]+)")
+	return ItemCode, ItemId
 end
 
 GS_ServerItemPrefix = "GSTMOG"
@@ -535,7 +537,14 @@ function GearScore_InitializeStatsDropDown(EnglishClass, Stats)
 	if not GS_ServerStatsDropDown then
 		GS_ServerStatsDropDown = CreateFrame("Frame", "GS_ServerStatsDropDown", GS_GearFrame, "UIDropDownMenuTemplate")
 		GS_ServerStatsDropDown:SetPoint("TOPLEFT", GS_ServerStatsBackground, "TOPLEFT", -14, 34)
+		GS_ServerStatsDropDown:SetToplevel(true)
+		GS_ServerStatsDropDown:SetFrameStrata("DIALOG")
+		GS_ServerStatsDropDown:SetFrameLevel(80)
 	end
+
+	GS_ServerStatsDropDown:Show()
+	GS_ServerStatsDropDown:EnableMouse(true)
+	GS_ServerStatsDropDown:Raise()
 
 	GS_ServerStatsTitle:Hide()
 
