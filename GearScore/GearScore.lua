@@ -83,12 +83,13 @@ function GearScore_OnEvent(GS_Nil, GS_EventName, GS_Prefix, GS_AddonMessage, GS_
   	end
 	if ( GS_EventName == "PLAYER_TARGET_CHANGED" ) then
 		if UnitName("target") then 	GS_Data[GetRealmName()]["CurrentPlayer"] = {}; end
+		if UnitName("target") and UnitIsPlayer("target") then
+			GearScore_RequestServerItemData(UnitName("target"))
+		end
 		if ( GS_DisplayFrame:IsVisible() ) then
 			if UnitName("target") then  
-				if CanInspect("target") then
-					NotifyInspect("target")
-					GearScore_RequestOrScan(UnitName("target"), "target")
-				end
+				if CanInspect("target") then NotifyInspect("target"); end
+				GearScore_RequestOrScan(UnitName("target"), "target")
 				--ClearAchievementComparisonUnit(); SetAchievementComparisonUnit("target")				
 				--GearScore_DisplayUnit(UnitName("target"), 1); 
 				
@@ -220,7 +221,7 @@ function GearScore_Prune()
 		--local time, monthago = GearScore_GetTimeStamp()
   		for i, v in pairs(GS_Data[GetRealmName()].Players) do 
 			--if ( tonumber(v.Level) < GS_Settings["MinLevel"] ) then GS_Data[GetRealmName()].Players[i] = nil; end;
-  			if ( ( GS_Factions[v.Faction] ~= UnitFactionGroup("player") ) and ( GS_Settings["KeepFaction"] == -1 ) ) or ( ( tonumber(v.Level) < GS_Settings["MinLevel"] ) and ( v.Name ~= UnitName("player") ) ) then GS_Data[GetRealmName()].Players[v.Name] = nil; end
+  			if ( v.Scanned ~= "Server" ) and ( ( ( GS_Factions[v.Faction] ~= UnitFactionGroup("player") ) and ( GS_Settings["KeepFaction"] == -1 ) ) or ( ( tonumber(v.Level) < GS_Settings["MinLevel"] ) and ( v.Name ~= UnitName("player") ) ) ) then GS_Data[GetRealmName()].Players[v.Name] = nil; end
 			if not v.GearScore or not v.Name or not v.Sex or not v.Equip or not v.Location or not v.Level or not v.Faction or not v.Guild or not v.Race or not v.Class or not v.Date or not v.Average or not v.Scanned then GS_Data[GetRealmName()].Players[i] = nil; end
 			if ( string.find(v.Scanned, "<") ) then GS_Data[GetRealmName()].Players[v.Name] = nil; end
             if v.Guild == "<>" or v.Guild == "" then GS_Data[GetRealmName()].Players[v.Name].Guild = "*"; end
@@ -293,6 +294,14 @@ GS_ServerStatsProfiles = {
 	{ Key = "defense", Label = "Захист" },
 }
 GS_ServerStatsSelectedProfile = nil
+GS_ServerMetaRaceMap = {
+	[1] = "Human", [2] = "Orc", [3] = "Dwarf", [4] = "Night Elf", [5] = "Undead", [6] = "Tauren",
+	[7] = "Gnome", [8] = "Troll", [10] = "Blood Elf", [11] = "Draenei"
+}
+GS_ServerMetaClassMap = {
+	[1] = "Warrior", [2] = "Paladin", [3] = "Hunter", [4] = "Rogue", [5] = "Priest",
+	[6] = "Death Knight", [7] = "Shaman", [8] = "Mage", [9] = "Warlock", [11] = "Druid"
+}
 
 function GearScore_HasSelfReportedRecord(Name)
 	if not Name then return false; end
@@ -332,7 +341,7 @@ function GearScore_RequestServerItemData(Name)
 	if (Now - LastRequest) < 1.5 then return; end
 
 	GS_ServerRequestThrottle[Name] = Now
-	SendAddonMessage(GS_ServerItemPrefix, "REQ", "WHISPER", Name)
+	SendAddonMessage(GS_ServerItemPrefix, "REQ\t"..Name, "WHISPER", UnitName("player"))
 end
 
 function GearScore_GetItemLinkFromCode(ItemCode)
@@ -350,13 +359,13 @@ function GearScore_PrimeServerItemCache(ItemCode)
 	GS_ServerItemTooltip:SetHyperlink("item:"..ItemCode)
 end
 
-function GearScore_QueueServerRecordRetry(Name, Target, EquipCodes, ScanSource, ServerStats)
+function GearScore_QueueServerRecordRetry(Name, Target, EquipCodes, ScanSource, ServerStats, ServerMeta)
 	if not Name or not EquipCodes then return; end
 	if not GS_ServerRetryQueue then GS_ServerRetryQueue = {}; end
 
 	local Retries = 1
 	if GS_ServerRetryQueue[Name] then Retries = (GS_ServerRetryQueue[Name].Retries or 0) + 1; end
-	GS_ServerRetryQueue[Name] = { ["Name"] = Name, ["Target"] = Target, ["EquipCodes"] = EquipCodes, ["ScanSource"] = ScanSource, ["ServerStats"] = ServerStats, ["Retries"] = Retries }
+	GS_ServerRetryQueue[Name] = { ["Name"] = Name, ["Target"] = Target, ["EquipCodes"] = EquipCodes, ["ScanSource"] = ScanSource, ["ServerStats"] = ServerStats, ["ServerMeta"] = ServerMeta, ["Retries"] = Retries }
 
 	if not GS_ServerRetryFrame then
 		GS_ServerRetryFrame = CreateFrame("Frame", "GS_ServerRetryFrame")
@@ -371,7 +380,7 @@ function GearScore_QueueServerRecordRetry(Name, Target, EquipCodes, ScanSource, 
 				if RetryData.Retries > 4 then
 					GS_ServerRetryQueue[RetryName] = nil
 				else
-					if GearScore_BuildRecordFromItemCodes(RetryData.Name, RetryData.Target, RetryData.EquipCodes, RetryData.ScanSource, true, RetryData.ServerStats) then
+					if GearScore_BuildRecordFromItemCodes(RetryData.Name, RetryData.Target, RetryData.EquipCodes, RetryData.ScanSource, true, RetryData.ServerStats, RetryData.ServerMeta) then
 						if UnitName("mouseover") == RetryName then GameTooltip:SetUnit(RetryName); end
 						if ( GS_DisplayPlayer == RetryName ) and ( GS_DisplayFrame:IsVisible() ) then GearScore_DisplayUnit(RetryName, 1); end
 						GS_ServerRetryQueue[RetryName] = nil
@@ -399,7 +408,20 @@ function GearScore_GetUnitTokenByName(Name)
 end
 
 function GearScore_NormalizeName(Name)
-	if not Name or Name == "" then return UnitName("player"); end
+	if not Name then return UnitName("player"); end
+	Name = string.gsub(Name, "^%s+", "")
+	Name = string.gsub(Name, "%s+$", "")
+	if Name == "" then return UnitName("player"); end
+	if UnitName("player") and strlower(UnitName("player")) == strlower(Name) then return UnitName("player"); end
+	if UnitName("target") and strlower(UnitName("target")) == strlower(Name) then return UnitName("target"); end
+	if UnitName("mouseover") and strlower(UnitName("mouseover")) == strlower(Name) then return UnitName("mouseover"); end
+	if GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players then
+		for PlayerName, Record in pairs(GS_Data[GetRealmName()].Players) do
+			if PlayerName and strlower(PlayerName) == strlower(Name) then
+				return PlayerName
+			end
+		end
+	end
 	return Name
 end
 
@@ -605,6 +627,50 @@ function GearScore_ParseServerStats(Field)
 	return Stats
 end
 
+function GearScore_ParseServerMeta(Field)
+	if not Field or string.sub(Field, 1, 5) ~= "META@" then return nil; end
+
+	local Meta = {}
+	for Pair in string.gmatch(string.sub(Field, 6), "[^;]+") do
+		local _, _, Key, RawValue = string.find(Pair, "^([^=]+)=(.*)$")
+		if Key and RawValue then
+			Meta[Key] = tonumber(RawValue) or RawValue
+		end
+	end
+
+	if not next(Meta) then return nil; end
+	return Meta
+end
+
+function GearScore_SeedServerRecord(Name, Equip, ServerStats, ServerMeta)
+	if not Name or not Equip or not ServerMeta then return; end
+	if not GS_Data or not GS_Data[GetRealmName()] or not GS_Data[GetRealmName()].Players then return; end
+
+	local ExistingRecord = GS_Data[GetRealmName()].Players[Name] or {}
+	local RaceEnglish = GS_ServerMetaRaceMap[tonumber(ServerMeta.race_id or 0)] or ExistingRecord.Race or "Human"
+	local ClassEnglish = GS_ServerMetaClassMap[tonumber(ServerMeta.class_id or 0)] or ExistingRecord.Class or "Warrior"
+
+	GS_Data[GetRealmName()].Players[Name] = {
+		["Name"] = Name,
+		["GearScore"] = ExistingRecord.GearScore or 0,
+		["PVP"] = 1,
+		["Level"] = ServerMeta.level or ExistingRecord.Level or 0,
+		["Faction"] = ServerMeta.faction or ExistingRecord.Faction or "A",
+		["Sex"] = ServerMeta.sex or ExistingRecord.Sex or 1,
+		["Guild"] = ServerMeta.guild or ExistingRecord.Guild or "*",
+		["Race"] = GS_Races[RaceEnglish] or ExistingRecord.Race or RaceEnglish,
+		["Class"] = GS_Classes[ClassEnglish] or ExistingRecord.Class or ClassEnglish,
+		["Spec"] = ExistingRecord.Spec or 1,
+		["Location"] = ServerMeta.location or ExistingRecord.Location or "Unknown Location",
+		["Scanned"] = "Server",
+		["Date"] = GearScore_GetTimeStamp(),
+		["Average"] = ExistingRecord.Average or 0,
+		["Equip"] = Equip,
+		["ServerCachedAt"] = GetTime(),
+		["Stats"] = ServerStats or ExistingRecord.Stats
+	}
+end
+
 function GearScore_GetPlayerLocalStats(UnitToken)
 	if UnitToken ~= "player" then return nil; end
 
@@ -702,7 +768,7 @@ function GearScore_SetDisplayStats(Name, UnitToken)
 	end
 end
 
-function GearScore_BuildRecordFromItemCodes(Name, Target, EquipCodes, ScanSource, FromRetry, ServerStats)
+function GearScore_BuildRecordFromItemCodes(Name, Target, EquipCodes, ScanSource, FromRetry, ServerStats, ServerMeta)
 	if not Name or not EquipCodes then return; end
 
 	if not Target then Target = GearScore_GetUnitTokenByName(Name); end
@@ -761,7 +827,7 @@ function GearScore_BuildRecordFromItemCodes(Name, Target, EquipCodes, ScanSource
 	TempEquip[4] = "0:0"
 
 	if MissingItems > 0 then
-		GearScore_QueueServerRecordRetry(Name, Target, EquipCodes, ScanSource, ServerStats)
+		GearScore_QueueServerRecordRetry(Name, Target, EquipCodes, ScanSource, ServerStats, ServerMeta)
 		return nil
 	end
 
@@ -786,6 +852,14 @@ function GearScore_BuildRecordFromItemCodes(Name, Target, EquipCodes, ScanSource
 		Level = ExistingRecord.Level
 		Faction = ExistingRecord.Faction
 		Sex = ExistingRecord.Sex
+	elseif ServerMeta then
+		RaceEnglish = GS_ServerMetaRaceMap[tonumber(ServerMeta.race_id or 0)] or ServerMeta.race
+		ClassEnglish = GS_ServerMetaClassMap[tonumber(ServerMeta.class_id or 0)] or ServerMeta.class
+		currentzone = ServerMeta.location or currentzone
+		GuildName = ServerMeta.guild or GuildName
+		Level = ServerMeta.level or Level
+		Faction = ServerMeta.faction or Faction
+		Sex = ServerMeta.sex or Sex
 	end
 
 	if not RaceEnglish or not ClassEnglish or not Level or not Faction then return; end
@@ -807,11 +881,15 @@ function GearScore_HandleServerItemReply(Message, Sender)
 	end
 	Equip[4] = "0:0"
 	local ServerStats = nil
+	local ServerMeta = nil
 	for i = 20, table.getn(Fields) do
 		ServerStats = GearScore_ParseServerStats(Fields[i]) or ServerStats
+		ServerMeta = GearScore_ParseServerMeta(Fields[i]) or ServerMeta
 	end
-	GearScore_BuildRecordFromItemCodes(Name, GearScore_GetUnitTokenByName(Name), Equip, "Server", nil, ServerStats)
+	GearScore_SeedServerRecord(Name, Equip, ServerStats, ServerMeta)
+	GearScore_BuildRecordFromItemCodes(Name, GearScore_GetUnitTokenByName(Name), Equip, "Server", nil, ServerStats, ServerMeta)
 	if UnitName("mouseover") == Name then GameTooltip:SetUnit(Name); end
+	if GS_DisplayPlayer and strlower(GS_DisplayPlayer) == strlower(Name) then GS_DisplayPlayer = Name; end
 	if ( GS_DisplayPlayer == Name ) and ( GS_DisplayFrame:IsVisible() ) then GearScore_DisplayUnit(Name, 1); end
 end
 
@@ -828,9 +906,11 @@ function GearScore_UpdateSearchBox(Box)
 end
 
 function GearScore_RequestOrScan(Name, Target)
-	if not Name or not Target then return; end
+	if not Name then return; end
 
-	GearScore_RequestServerItemData(Name)
+	if Name ~= UnitName("player") then
+		GearScore_RequestServerItemData(Name)
+	end
 
 	if GearScore_HasAuthoritativeRecord(Name) then
 		if GearScore_HasSelfReportedRecord(Name) then GearScore_Request(Name); end
@@ -842,7 +922,35 @@ function GearScore_RequestOrScan(Name, Target)
 		return
 	end
 
+	if Name ~= UnitName("player") then return; end
+	if not Target then return; end
 	GearScore_GetScore(Name, Target)
+end
+
+function GearScore_ShouldWaitForServerRecord(Name, UnitToken)
+	if not Name or Name == UnitName("player") then return false; end
+	if GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[Name] then return false; end
+	if GearScore_HasFreshServerRecord(Name) or GearScore_HasSelfReportedRecord(Name) then return false; end
+	if UnitToken and UnitExists(UnitToken) and UnitIsPlayer(UnitToken) then return true; end
+	return true
+end
+
+function GearScore_GetRecordDisplayRace(Record)
+	if not Record or not Record.Race then return ""; end
+	return GS_Races[Record.Race] or Record.Race or ""
+end
+
+function GearScore_GetRecordDisplayClass(Record)
+	if not Record or not Record.Class then return ""; end
+	return GS_Classes[Record.Class] or Record.Class or ""
+end
+
+function GearScore_GetRecordClassColors(Record)
+	local DisplayClass = GearScore_GetRecordDisplayClass(Record)
+	if DisplayClass and GS_ClassInfo[DisplayClass] then
+		return GS_ClassInfo[DisplayClass].Red, GS_ClassInfo[DisplayClass].Green, GS_ClassInfo[DisplayClass].Blue
+	end
+	return 1, 0.82, 0
 end
 
 -------------------------- Get Mouseover Score -----------------------------------
@@ -1166,13 +1274,11 @@ end
 function GearScore_HookSetUnit(arg1, arg2)
     GS_GearScore = nil; local Name = GameTooltip:GetUnit(); GearScore_GetGroupScores(); local PreviousRecord = {}; 
     local Age = "*";
+    Name = GearScore_NormalizeName(Name)
     local Realm = ""; if UnitName("mouseover") == Name then _, Realm = UnitName("mouseover"); if not Realm then Realm = GetRealmName(); end; end
-	if ( CanInspect("mouseover") ) and ( UnitName("mouseover") == Name ) and not ( GS_PlayerIsInCombat ) and ( UnitIsUnit("target", "mouseover") ) then 
+	if ( UnitName("mouseover") == Name ) and UnitIsPlayer("mouseover") and not ( GS_PlayerIsInCombat ) then 
 		Age = "";
-		if (GS_DisplayFrame:IsVisible()) and GS_DisplayPlayer and UnitName("target") then if GS_DisplayPlayer == UnitName("target") then return; end; end			
 		if ( GS_Data[GetRealmName()].Players[Name] ) then PreviousRecord = GS_Data[GetRealmName()].Players[Name]; end 
-		NotifyInspect("mouseover"); GearScore_RequestOrScan(Name, "mouseover"); --GS_Data[GetRealmName()]["CurrentPlayer"] = GS_Data[GetRealmName()]["Players"][Name]
-		if not ( GearScore_IsRecordTheSame(GS_Data[GetRealmName()].Players[Name], PreviousRecord) ) then GearScore_Send(Name, "ALL"); end
 	end
  	if ( GS_Data[GetRealmName()].Players[Name] ) and ( GS_Data[GetRealmName()].Players[Name].GearScore > 0 ) and ( GS_Settings["Player"] == 1 ) then 
 		local Red, Blue, Green = GearScore_GetQuality(GS_Data[GetRealmName()].Players[Name].GearScore)
@@ -1202,12 +1308,8 @@ function GearScore_HookSetUnit(arg1, arg2)
 		if ( GS_Settings["Detail"] == 1 ) then GearScore_SetDetails(GameTooltip, Name); end
 		if ( GS_Settings["Special"] == 1 ) and ( GS_Special[Name] ) then if ( GS_Special[Name]["Realm"] == Realm ) then GameTooltip:AddLine(GS_Special[GS_Special[Name].Type], 1, 0, 0 ); end; end
 		if ( GS_Settings["Special"] == 1 ) and ( GS_Special[GS_Data[GetRealmName()].Players[Name].Guild] ) then GameTooltip:AddLine(GS_Special[GS_Special[GS_Data[GetRealmName()].Players[Name].Guild].Type], 1, 0, 0 ); end
-        local EnglishFaction, Faction = UnitFactionGroup("player")
-		--print(EnglishFaction)
-		if ( ( GS_Factions[GS_Data[GetRealmName()].Players[Name].Faction] ~= UnitFactionGroup("player") ) and ( GS_Settings["KeepFaction"] == -1 ) ) or ( ( GS_Data[GetRealmName()].Players[Name].Level < GS_Settings["MinLevel"] ) and ( Name ~= UnitName("player") ) ) then GS_Data[GetRealmName()].Players[Name] = nil; end
---		if ( ( GS_Data[GetRealmName()].Players[Name].Level < GS_Settings["MinLevel"] ) and ( Name ~= UnitName("player") ) ) then GS_Data[GetRealmName()].Players[Name] = nil; end
-		if ( GS_Settings["ShowHelp"] == 1 ) then GameTooltip: AddLine("Target this player and type /gs for detailed information. You can turn this msg off in the options screen. (/gs)", 1,1,1,1); end
-	end
+			if ( GS_Settings["ShowHelp"] == 1 ) then GameTooltip: AddLine("Target this player and type /gs for detailed information. You can turn this msg off in the options screen. (/gs)", 1,1,1,1); end
+		end
 	--GearScore_Request(Name)
 end
 
@@ -1475,7 +1577,7 @@ function GearScore_DisplayUnit(Name, Auto)
 	GearScore_HideDatabase(1)
 	GS_DisplayPlayer = Name
 	local UnitToken = GearScore_GetUnitTokenByName(Name)
-	if UnitToken and UnitExists(UnitToken) and UnitIsPlayer(UnitToken) and Name ~= UnitName("player") then
+	if Name ~= UnitName("player") then
 		GearScore_RequestOrScan(Name, UnitToken)
 	end
 	GS_DatabaseFrame.tooltip = nil
@@ -1489,36 +1591,56 @@ function GearScore_DisplayUnit(Name, Auto)
 	GS_DisplayFrame:Show()
 	GS_Model:SetModelScale(1)
     GS_Model:SetCamera(1)
-    GS_Model:SetLight(1, 0, 0, -0.707, -0.707, 0.7, 1.0, 1.0, 1.0, 0.8, 1.0, 1.0, 0.8)
+	GS_Model:SetLight(1, 0, 0, -0.707, -0.707, 0.7, 1.0, 1.0, 1.0, 0.8, 1.0, 1.0, 0.8)
 	if UnitToken and UnitExists(UnitToken) then GS_Model:SetUnit(UnitToken); else GS_Model:SetUnit("player"); end
 	GS_Model:Undress()
  	GS_Model:EnableMouse(1)
     GS_Model:SetPosition(0,0,0)
 
-	if ( GS_Data[GetRealmName()].Players[Name] ) then
-	    for i = 1, 18 do
-	    	if ( i ~= 4 ) then
-	            local ItemName, ItemLink, ItemRarity, ItemLevel, ItemMinLevel, ItemType, ItemSubType, ItemStackCount, ItemEquipLoc, ItemTexture = GetItemInfo("item:"..GS_Data[GetRealmName()].Players[Name].Equip[i])
-				local backdrop = {}
-				if ( ItemLink ) then GS_Model:TryOn(ItemLink); end
-    			if ( ItemTexture ) then backdrop = { bgFile = ItemTexture }; _G["GS_Frame"..i]:SetBackdrop(backdrop); else backdrop = { bgFile = GS_TextureFiles[i] }; _G["GS_Frame"..i]:SetBackdrop(backdrop);end
+	if GearScore_ShouldWaitForServerRecord(Name, UnitToken) then
+		GS_InfoText:SetText("")
+		GS_NameText:SetText(Name)
+		GS_GuildText:SetText("")
+		GS_DateText:SetText("")
+		GS_AverageText:SetText("")
+		GS_LocationText:SetText("")
+		GS_GearScoreText:SetText("Очікування даних...")
+		GearScore_SetDisplayStats(Name, UnitToken)
+		local backdrop = {}
+		for i = 1, 18 do if ( i ~=4 ) then backdrop = { bgFile = GS_TextureFiles[i] }; _G["GS_Frame"..i]:SetBackdrop(backdrop); end; end
+	elseif ( GS_Data[GetRealmName()].Players[Name] ) then
+		local Record = GS_Data[GetRealmName()].Players[Name]
+		if Record.Scanned == "Server" and (not Record.GearScore or Record.GearScore <= 0) and Record.Equip then
+			if GearScore_BuildRecordFromItemCodes(Name, UnitToken, Record.Equip, "Server", true, Record.Stats) then
+				Record = GS_Data[GetRealmName()].Players[Name]
 			end
 		end
-	    GS_InfoText:SetText(GS_Data[GetRealmName()].Players[Name].Level.." "..GS_Races[GS_Data[GetRealmName()].Players[Name].Race].." "..GS_Classes[GS_Data[GetRealmName()].Players[Name].Class])
-	    GS_InfoText:SetTextColor(GS_ClassInfo[GS_Classes[GS_Data[GetRealmName()].Players[Name].Class]].Red, GS_ClassInfo[GS_Classes[GS_Data[GetRealmName()].Players[Name].Class]].Green, GS_ClassInfo[GS_Classes[GS_Data[GetRealmName()].Players[Name].Class]].Blue, 1)
-		GS_NameText:SetText(GS_Data[GetRealmName()].Players[Name].Name)
-	    GS_NameText:SetTextColor(GS_ClassInfo[GS_Classes[GS_Data[GetRealmName()].Players[Name].Class]].Red, GS_ClassInfo[GS_Classes[GS_Data[GetRealmName()].Players[Name].Class]].Green, GS_ClassInfo[GS_Classes[GS_Data[GetRealmName()].Players[Name].Class]].Blue, 1)
-		Red, Green, Blue = GearScore_GetQuality(GS_Data[GetRealmName()].Players[Name].GearScore)
-		GS_GearScoreText:SetText("Raw GearScore: "..GS_Data[GetRealmName()].Players[Name].GearScore)
+		local DisplayRace = GearScore_GetRecordDisplayRace(Record)
+		local DisplayClass = GearScore_GetRecordDisplayClass(Record)
+		local ClassRed, ClassGreen, ClassBlue = GearScore_GetRecordClassColors(Record)
+	    for i = 1, 18 do
+	    	if ( i ~= 4 ) then
+	            local ItemName, ItemLink, ItemRarity, ItemLevel, ItemMinLevel, ItemType, ItemSubType, ItemStackCount, ItemEquipLoc, ItemTexture = GetItemInfo("item:"..Record.Equip[i])
+				local backdrop = {}
+				if ( ItemLink ) then GS_Model:TryOn(ItemLink); end
+	    		if ( ItemTexture ) then backdrop = { bgFile = ItemTexture }; _G["GS_Frame"..i]:SetBackdrop(backdrop); else backdrop = { bgFile = GS_TextureFiles[i] }; _G["GS_Frame"..i]:SetBackdrop(backdrop);end
+			end
+		end
+	    GS_InfoText:SetText((Record.Level or "").." "..DisplayRace.." "..DisplayClass)
+	    GS_InfoText:SetTextColor(ClassRed, ClassGreen, ClassBlue, 1)
+		GS_NameText:SetText(Record.Name or Name)
+	    GS_NameText:SetTextColor(ClassRed, ClassGreen, ClassBlue, 1)
+		Red, Green, Blue = GearScore_GetQuality(Record.GearScore)
+		GS_GearScoreText:SetText("Raw GearScore: "..(Record.GearScore or "No Record"))
 		GS_GearScoreText:SetTextColor(Red,Blue,Green)
-		GS_GuildText:SetTextColor(GS_ClassInfo[GS_Classes[GS_Data[GetRealmName()].Players[Name].Class]].Red, GS_ClassInfo[GS_Classes[GS_Data[GetRealmName()].Players[Name].Class]].Green, GS_ClassInfo[GS_Classes[GS_Data[GetRealmName()].Players[Name].Class]].Blue, 1)
-		GS_GuildText:SetText(GS_Data[GetRealmName()].Players[Name].Guild)
-		local Date, DateRed, DateGreen, DateBlue = GearScore_GetDate(GS_Data[GetRealmName()].Players[Name].Date)
+		GS_GuildText:SetTextColor(ClassRed, ClassGreen, ClassBlue, 1)
+		GS_GuildText:SetText(Record.Guild or "")
+		local Date, DateRed, DateGreen, DateBlue = GearScore_GetDate(Record.Date)
 		ColorStringDate = "|cff"..string.format("%02x%02x%02x", DateRed * 255, DateGreen * 255, DateBlue * 255) 
 		local MyDateText = Date.." days ago"; if ( tonumber(Date) == 0 ) then MyDateText = "Today"; end
-		GS_DateText:SetText("Scanned "..ColorStringDate..MyDateText.."|r  by  "..GS_Data[GetRealmName()].Players[Name].Scanned)
-		GS_AverageText:SetText("Average ItemLevel:|cFFFFFFFF "..GS_Data[GetRealmName()].Players[Name].Average)
-		GS_LocationText:SetText(GS_Zones[GS_Data[GetRealmName()].Players[Name].Location])
+		GS_DateText:SetText("Scanned "..ColorStringDate..MyDateText.."|r  by  "..(Record.Scanned or "Unknown"))
+		GS_AverageText:SetText("Average ItemLevel:|cFFFFFFFF "..(Record.Average or "-"))
+		GS_LocationText:SetText(GS_Zones[Record.Location] or Record.Location or "")
 		GearScore_SetDisplayStats(Name, UnitToken)
 		GearScore_UpdateRaidColors(Name)
 	else
