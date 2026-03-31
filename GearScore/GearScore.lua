@@ -953,6 +953,23 @@ function GearScore_GetRecordClassColors(Record)
 	return 1, 0.82, 0
 end
 
+function GearScore_GetRecordGuild(Record)
+	if not Record or not Record.Guild or Record.Guild == "" then return ""; end
+	return Record.Guild
+end
+
+function GearScore_GetSortableRace(Record)
+	return strlower(GearScore_GetRecordDisplayRace(Record) or "")
+end
+
+function GearScore_GetSortableClass(Record)
+	return strlower(GearScore_GetRecordDisplayClass(Record) or "")
+end
+
+function GearScore_GetSortableGuild(Record)
+	return strlower(GearScore_GetRecordGuild(Record) or "")
+end
+
 -------------------------- Get Mouseover Score -----------------------------------
 function GearScore_GetScore(Name, Target)
 	if ( UnitIsPlayer(Target) ) then
@@ -1594,8 +1611,18 @@ function GearScore_DisplayUnit(Name, Auto)
 	GS_Model:SetLight(1, 0, 0, -0.707, -0.707, 0.7, 1.0, 1.0, 1.0, 0.8, 1.0, 1.0, 0.8)
 	if UnitToken and UnitExists(UnitToken) then GS_Model:SetUnit(UnitToken); else GS_Model:SetUnit("player"); end
 	GS_Model:Undress()
- 	GS_Model:EnableMouse(1)
+ 	GS_Model:EnableMouse(0)
     GS_Model:SetPosition(0,0,0)
+	for i = 1, 18 do
+		if ( i ~= 4 ) and _G["GS_Frame"..i] then
+			_G["GS_Frame"..i]:SetParent(GS_GearFrame)
+			_G["GS_Frame"..i]:SetToplevel(true)
+			_G["GS_Frame"..i]:EnableMouse(true)
+			_G["GS_Frame"..i]:SetFrameStrata("HIGH")
+			_G["GS_Frame"..i]:SetFrameLevel(40)
+			_G["GS_Frame"..i]:Raise()
+		end
+	end
 
 	if GearScore_ShouldWaitForServerRecord(Name, UnitToken) then
 		GS_InfoText:SetText("")
@@ -1837,10 +1864,10 @@ function GearScore_DisplayDatabase(Group, SortType, Auto, GSX_StartPage)
 		if ( SortType == "GearScore" ) then GS_HighlightedColNum = 2; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.GearScore > b.GearScore end); else table.sort(GSX_DataBase, function(a, b) return a.GearScore < b.GearScore end); end; end
 		if ( SortType == "iLevel" ) then GS_HighlightedColNum = 4; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Average > b.Average end); else table.sort(GSX_DataBase, function(a, b) return a.Average < b.Average end); end; end
 		if ( SortType == "Level" ) then GS_HighlightedColNum = 5; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return tonumber(a.Level) > tonumber(b.Level) end); else table.sort(GSX_DataBase, function(a, b) return tonumber(a.Level) < tonumber(b.Level) end); end; end
-		if ( SortType == "Guild" ) then GS_HighlightedColNum = 8; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Guild < b.Guild end); else table.sort(GSX_DataBase, function(a, b) return a.Guild > b.Guild end); end; end
-		if ( SortType == "Class" ) then GS_HighlightedColNum = 7; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GS_Classes[a.Class] < GS_Classes[b.Class] end); else table.sort(GSX_DataBase, function(a, b) return GS_Classes[a.Class] > GS_Classes[b.Class] end); end; end
+		if ( SortType == "Guild" ) then GS_HighlightedColNum = 8; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableGuild(a) < GearScore_GetSortableGuild(b) end); else table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableGuild(a) > GearScore_GetSortableGuild(b) end); end; end
+		if ( SortType == "Class" ) then GS_HighlightedColNum = 7; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableClass(a) < GearScore_GetSortableClass(b) end); else table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableClass(a) > GearScore_GetSortableClass(b) end); end; end
 		if ( SortType == "Date" ) then GS_HighlightedColNum = 9; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Date > b.Date end); else table.sort(GSX_DataBase, function(a, b) return a.Date < b.Date end); end; end
-		if ( SortType == "Race" ) then GS_HighlightedColNum = 6; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GS_Races[a.Race] < GS_Races[b.Race] end); else table.sort(GSX_DataBase, function(a, b) return GS_Races[a.Race] > GS_Races[b.Race] end); end; end
+		if ( SortType == "Race" ) then GS_HighlightedColNum = 6; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableRace(a) < GearScore_GetSortableRace(b) end); else table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableRace(a) > GearScore_GetSortableRace(b) end); end; end
 		if ( SortType == "Scanned" ) then GS_HighlightedColNum = 10; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Scanned < b.Scanned end); else table.sort(GSX_DataBase, function(a, b) return a.Scanned > b.Scanned end); end; end
 	end		
 	if ( GS_StartPage > (#(GSX_DataBase))) then GS_StartPage = GS_StartPage - 25; end
@@ -1848,18 +1875,22 @@ function GearScore_DisplayDatabase(Group, SortType, Auto, GSX_StartPage)
 	for i,v in pairs(GSX_DataBase) do
 	if ( i > GS_StartPage ) then
 		local Red, Green, Blue = GearScore_GetQuality(v.GearScore) 
+		local DisplayRace = GearScore_GetRecordDisplayRace(v)
+		local DisplayClass = GearScore_GetRecordDisplayClass(v)
+		local DisplayGuild = GearScore_GetRecordGuild(v)
+		local ClassRed, ClassGreen, ClassBlue = GearScore_GetRecordClassColors(v)
 	
     	--if ( Red ) and ( Green ) and ( Blue ) then
     		Recount = Recount + 1
     		if ( v.Faction == "H" ) then FactionColor = "|cff"..string.format("%02x%02x%02x", 1 * 255, 0 * 255, 0 * 255); else  FactionColor = "|cff"..string.format("%02x%02x%02x", 0 , 162, 255); end   
-  			ColorString1 = "|cff"..string.format("%02x%02x%02x", GS_ClassInfo[GS_Classes[v.Class]].Red * 255, GS_ClassInfo[GS_Classes[v.Class]].Green * 255, GS_ClassInfo[GS_Classes[v.Class]].Blue * 255)
+  			ColorString1 = "|cff"..string.format("%02x%02x%02x", ClassRed * 255, ClassGreen * 255, ClassBlue * 255)
   			local NowDate, NoWRed, NowGreen, NowBlue = GearScore_GetDate(v.Date) 
 --  			print(NowDate, NoWRed, NowGreen, NowBlue)
 			ColorStringDate = "|cff"..string.format("%02x%02x%02x", NoWRed * 255, NowGreen * 255, NowBlue * 255) 
 --			ColorStringDate..NowDate
 			local Red, Green, Blue = GearScore_GetQuality(v.GearScore) 
 			ColorString2 = "|cff"..string.format("%02x%02x%02x", Red * 255, Blue * 255, Green * 255)
-    	   	tooltip:AddLine(Recount, ColorString2..v.GearScore, ColorString1..v.Name, v.Average, ColorString1..v.Level, ColorString1..GS_Races[v.Race], ColorString1..GS_Classes[v.Class], FactionColor.."<"..v.Guild..">", ColorStringDate..NowDate, v.Scanned)
+    	   	tooltip:AddLine(Recount, ColorString2..(v.GearScore or 0), ColorString1..(v.Name or ""), (v.Average or 0), ColorString1..(v.Level or ""), ColorString1..DisplayRace, ColorString1..DisplayClass, FactionColor..(DisplayGuild ~= "" and ("<"..DisplayGuild..">") or ""), ColorStringDate..NowDate, (v.Scanned or ""))
     	   	if ( i >= ( GS_StartPage + 25 ) ) then break; end
        	--else
 		  -- print(v.Name, "doesn't have a GearScore!") 
@@ -1929,7 +1960,7 @@ function GearScore_HideDatabase(erase)
 
 	if ( Group == "Guild" ) then
 	GuildRoster(); for i = 1, GetNumGuildMembers(1) do	if ( GS_Data[GetRealmName()].Players[GetGuildRosterInfo(i)] ) then GSL_DataBase[count] = GS_Data[GetRealmName()].Players[GetGuildRosterInfo(i)]; count = count + 1; end; end; end
- if ( Group == "Search" ) then count = 0; for i,v in pairs(GS_Data[GetRealmName()].Players) do local DataString = tostring(v.GearScore..v.Name..v.Level..v.Guild..GS_Classes[v.Class]..GS_Races[v.Race]); if string.find(strlower(DataString), strlower(GS_SearchXBox:GetText())) then count = count + 1; GSL_DataBase[count] = v; end; end; end
+ if ( Group == "Search" ) then count = 0; for i,v in pairs(GS_Data[GetRealmName()].Players) do local DataString = tostring((v.GearScore or 0)..(v.Name or "")..(v.Level or "")..GearScore_GetRecordGuild(v)..GearScore_GetRecordDisplayClass(v)..GearScore_GetRecordDisplayRace(v)); if string.find(strlower(DataString), strlower(GS_SearchXBox:GetText() or "")) then count = count + 1; GSL_DataBase[count] = v; end; end; end
     if ( Group == "Friends" ) then GuildRoster(); for i = 1, GetNumFriends(1) do	if ( GS_Data[GetRealmName()].Players[GetFriendInfo(i)] ) then GSL_DataBase[count] = GS_Data[GetRealmName()].Players[GetFriendInfo(i)]; count = count + 1; end; end; end
 	
 	if Group == "All" then GSDatabaseInfoString:SetText("Database: "..count.." entries. (Approx "..floor(0.8372131704586988304093567251462 * count).."Kb)"); GS_Settings["DatabaseSize"] = count;
@@ -2008,9 +2039,9 @@ function GearScore_DatabaseOnClick(Event, Cell, Misc, Button)
 	--print(LineCount)
 	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 3 ) and ( GSX_DataBase[Cell["_line"]-2] ) and ( Cell["_line"] ~= 28 ) then --GearScore_Send(GSX_DataBase[Cell["_line"]-2+GS_StartPage].Name, "ALL"); 
 	GearScore_DisplayUnit(GSX_DataBase[Cell["_line"]-2+GS_StartPage].Name); return; end
-	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 6 ) and ( GSX_DataBase[Cell["_line"]-2] ) then GS_SearchXBox:SetText(GS_Races[(GSX_DataBase[Cell["_line"]-2+GS_StartPage].Race)]); GearScore_HideDatabase(); GearScore_DisplayDatabase("Search"); return; end
-	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 7 ) and ( GSX_DataBase[Cell["_line"]-2] ) then GS_SearchXBox:SetText(GS_Classes[(GSX_DataBase[Cell["_line"]-2+GS_StartPage].Class)]); GearScore_HideDatabase(); GearScore_DisplayDatabase("Search"); return; end
-	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 8 ) and ( GSX_DataBase[Cell["_line"]-2] ) then GS_SearchXBox:SetText((GSX_DataBase[Cell["_line"]-2+GS_StartPage].Guild)); GearScore_HideDatabase(); GearScore_DisplayDatabase("Search"); return; end
+	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 6 ) and ( GSX_DataBase[Cell["_line"]-2] ) then GS_SearchXBox:SetText(GearScore_GetRecordDisplayRace(GSX_DataBase[Cell["_line"]-2+GS_StartPage])); GearScore_HideDatabase(); GearScore_DisplayDatabase("Search"); return; end
+	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 7 ) and ( GSX_DataBase[Cell["_line"]-2] ) then GS_SearchXBox:SetText(GearScore_GetRecordDisplayClass(GSX_DataBase[Cell["_line"]-2+GS_StartPage])); GearScore_HideDatabase(); GearScore_DisplayDatabase("Search"); return; end
+	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 8 ) and ( GSX_DataBase[Cell["_line"]-2] ) then GS_SearchXBox:SetText(GearScore_GetRecordGuild(GSX_DataBase[Cell["_line"]-2+GS_StartPage])); GearScore_HideDatabase(); GearScore_DisplayDatabase("Search"); return; end
 --tooltip:AddHeader('#', 'GearScore', '  Name ', "iLevel", 'Level', '  Race   ', ' Class   ', 'Date'); tooltip:AddSeparator(1, 1, 1, 1)
 end
 
