@@ -65,13 +65,29 @@ function CalculateClasicItemScore_two(ItemLink, Tooltip, Red, Green, Blue)
 end
 
 function CalculateClasicItemScore(ItemLink, Tooltip, Red, Green, Blue)
-		local Class, englishClass = GS_Settings["CurrentClassMouseoverItem"]; local ShowSpecScores = true
-		if not Class then Class, englishClass = UnitClass("player"); Class = englishClass; ShowSpecScores = false; end; --if englishClass then Class = englishClass; end
+		local Class = GS_Settings["CurrentClassMouseoverItem"]; local ShowSpecScores = true
+		if not Class then
+			local _, englishClass = UnitClass("player")
+			Class = englishClass
+			ShowSpecScores = false
+		end
+		if not Class or not GearScoreClassSpecList[Class] or not GearScoreSpecWeights[Class] then return; end
 		local ItemName, ItemLink, ItemRarity, ItemLevel, ItemMinLevel, ItemType, ItemSubType, ItemStackCount, ItemEquipLoc, ItemTexture = GetItemInfo(ItemLink)
+		local _, _, ItemSlot = GearScore_GetItemScore(ItemLink)
+		local SlotMod = GS_ItemTypes[ItemEquipLoc] and GS_ItemTypes[ItemEquipLoc]["SlotMOD"] or nil
+		if not SlotMod and ItemSlot then
+			for _, ItemTypeInfo in pairs(GS_ItemTypes) do
+				if ItemTypeInfo.ItemSlot == ItemSlot then
+					SlotMod = ItemTypeInfo.SlotMOD
+					break
+				end
+			end
+		end
+		if not SlotMod or SlotMod <= 0 then return; end
 		for j,w in ipairs(GearScoreClassSpecList[Class]) do
 			if ( GS_Settings["ShowSpecScores"][GearScoreClassSpecList[Class][j]] == 1 ) or ( ShowSpecScores ) then
 				local GearScore = Calculate_GearScoreClasicScore(ItemLink, Class, j)
-				local Red, Green, Blue = GearScore_GetQuality(GearScore * 11.25 / GS_ItemTypes[ItemEquipLoc]["SlotMOD"])
+				local Red, Green, Blue = GearScore_GetQuality(GearScore * 11.25 / SlotMod)
 				Tooltip:AddLine(w.." SpecScore: "..floor(GearScore), Red, Blue, Green)
 			end
 		end
