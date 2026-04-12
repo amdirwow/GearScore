@@ -247,6 +247,7 @@ end
 GS_ServerItemPrefix = "GSTMOG"
 GS_ServerItemReplyPrefix = "GSTMOGR"
 GS_ServerCacheTTL = 15
+GS_TransmogSetDebug = GS_TransmogSetDebug or nil
 GS_ServerStatColumns = {
 	{
 		{ Key = "strength", Label = "Сила" },
@@ -257,6 +258,13 @@ GS_ServerStatColumns = {
 		{ Key = "armor", Label = "Броня" },
 	},
 }
+
+function GearScore_TransmogSetDebug(Message)
+	if not GS_TransmogSetDebug then return; end
+	if DEFAULT_CHAT_FRAME then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffffd100GSTSet:|r "..tostring(Message))
+	end
+end
 GS_ServerStatsMelee = {
 	{ Key = "damage", Label = "Шкода" },
 	{ Key = "speed", Label = "Швидкість", Digits = 2 },
@@ -332,7 +340,7 @@ function GearScore_HasFreshServerRecord(Name)
 end
 
 function GearScore_RequestServerItemData(Name)
-	if not Name or Name == UnitName("player") then return; end
+	if not Name then return; end
 	if GearScore_HasFreshServerRecord(Name) then
 		return
 	end
@@ -350,6 +358,655 @@ function GearScore_GetItemLinkFromCode(ItemCode)
 	if not ItemCode or ItemCode == "0:0" then return nil; end
 	local ItemName, ItemLink = GetItemInfo("item:"..ItemCode)
 	return ItemLink
+end
+
+function GearScore_GetTooltipFrame(Name)
+	if not Name then return nil; end
+	local Frame = _G[Name]
+	return Frame
+end
+
+function GearScore_GetHiddenSetTooltip()
+	if not GS_TransmogSetTooltip then
+		GS_TransmogSetTooltip = CreateFrame("GameTooltip", "GS_TransmogSetTooltip", UIParent, "GameTooltipTemplate")
+		GS_TransmogSetTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+	end
+	return GS_TransmogSetTooltip
+end
+
+function GearScore_CleanTooltipText(Text)
+	if not Text then return nil; end
+	Text = string.gsub(Text, "|c%x%x%x%x%x%x%x%x", "")
+	Text = string.gsub(Text, "|r", "")
+	Text = string.gsub(Text, "|T.-|t", "")
+	Text = string.gsub(Text, "^%s+", "")
+	Text = string.gsub(Text, "%s+$", "")
+	if Text == "" then return nil; end
+	return Text
+end
+
+function GearScore_ParseItemSetFromTooltip(Tooltip)
+	if not Tooltip then return nil; end
+	local SetData = nil
+	local ReadingItems = nil
+
+	for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if Text then
+			local SetName, Count, Total = string.match(Text, "^(.-)%s*%((%d+)/(%d+)%)$")
+			if SetName and Count and Total then
+				SetData = { Name = SetName, Count = tonumber(Count), Total = tonumber(Total), Items = {}, ItemMap = {} }
+				ReadingItems = 1
+			elseif SetData and ReadingItems then
+				if string.find(Text, "^%(") or string.find(Text, ":") or string.find(Text, "^%d") then
+					ReadingItems = nil
+				else
+					tinsert(SetData.Items, Text)
+					SetData.ItemMap[Text] = 1
+				end
+			end
+		elseif SetData and ReadingItems then
+			ReadingItems = nil
+		end
+	end
+
+	if SetData and table.getn(SetData.Items) > 0 then return SetData; end
+	return nil
+end
+
+function GearScore_IsSetLineHighlighted(FontString)
+	if not FontString or not FontString.GetTextColor then return nil; end
+	local Red, Green, Blue = FontString:GetTextColor()
+	if not Red or not Green or not Blue then return nil; end
+	return (Red > 0.85 and Green > 0.65 and Blue < 0.35)
+end
+
+function GearScore_ParseHighlightedSetRowsFromTooltip(Tooltip, SetName)
+	local Highlighted = {}
+	if not Tooltip or not SetName then return Highlighted; end
+
+	local NameLine = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft1")
+	local ItemName = NameLine and GearScore_CleanTooltipText(NameLine:GetText())
+	local NormItemName = GearScore_NormalizeSetItemName(ItemName)
+	local ReadingItems = nil
+	for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if Text then
+			local CurrentSetName = string.match(Text, "^(.-)%s*%(%d+/%d+%)$")
+			if CurrentSetName and CurrentSetName == SetName then
+				ReadingItems = 1
+			elseif ReadingItems then
+				if string.find(Text, "^%(") or string.find(Text, ":") or string.find(Text, "^%d") then
+					ReadingItems = nil
+				else
+					local NormText = GearScore_NormalizeSetItemName(Text)
+					local MatchesItem = NormText and NormItemName and (string.find(NormItemName, NormText, 1, true) or string.find(NormText, NormItemName, 1, true))
+					if GearScore_IsSetLineHighlighted(Left) or MatchesItem then
+						local Red, Green, Blue = Left:GetTextColor()
+						local Row = { Red = Red or 1, Green = Green or 1, Blue = Blue or 1 }
+						Highlighted[Text] = Row
+						if NormText then Highlighted[NormText] = Row; end
+					end
+				end
+			end
+		elseif ReadingItems then
+			ReadingItems = nil
+		end
+	end
+
+	return Highlighted
+end
+
+function GearScore_GetItemSetDataFromCode(ItemCode)
+	if not ItemCode or ItemCode == "0:0" then return nil; end
+	if not GS_TransmogSetCache then GS_TransmogSetCache = {}; end
+
+	local CacheEntry = GS_TransmogSetCache[ItemCode]
+	if CacheEntry and (GetTime() - CacheEntry.Time) < 300 then
+		GearScore_TransmogSetDebug("set cache "..ItemCode.." -> "..(CacheEntry.Data and CacheEntry.Data.Name or "none"))
+		return CacheEntry.Data
+	end
+
+	local Tooltip = GearScore_GetHiddenSetTooltip()
+	Tooltip:ClearLines()
+	Tooltip:SetHyperlink("item:"..ItemCode)
+	local SetData = GearScore_ParseItemSetFromTooltip(Tooltip)
+	GearScore_TransmogSetDebug("parse item "..ItemCode.." -> "..(SetData and (SetData.Name.." "..table.getn(SetData.Items).." items") or "no set"))
+	if SetData or Tooltip:NumLines() > 0 then
+		GS_TransmogSetCache[ItemCode] = { Time = GetTime(), Data = SetData or false }
+	end
+	return SetData
+end
+
+function GearScore_GetItemNameFromCode(ItemCode)
+	if not ItemCode or ItemCode == "0:0" then return nil; end
+	local ItemName = GetItemInfo("item:"..ItemCode)
+	return ItemName
+end
+
+function GearScore_GetTooltipItemNameFromCode(ItemCode)
+	if not ItemCode or ItemCode == "0:0" then return nil; end
+	local Tooltip = GearScore_GetHiddenSetTooltip()
+	Tooltip:ClearLines()
+	Tooltip:SetHyperlink("item:"..ItemCode)
+	local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft1")
+	return Left and GearScore_CleanTooltipText(Left:GetText())
+end
+
+function GearScore_GetHighlightedSetRowsFromCode(ItemCode, SetName)
+	if not ItemCode or ItemCode == "0:0" or not SetName then return {}; end
+	local Tooltip = GearScore_GetHiddenSetTooltip()
+	Tooltip:ClearLines()
+	Tooltip:SetHyperlink("item:"..ItemCode)
+	return GearScore_ParseHighlightedSetRowsFromTooltip(Tooltip, SetName)
+end
+
+function GearScore_NormalizeSetItemName(Text)
+	Text = GearScore_CleanTooltipText(Text)
+	if not Text then return nil; end
+	Text = string.lower(Text)
+	Text = string.gsub(Text, "%s+", "")
+	Text = string.gsub(Text, "[%(%)]", "")
+	Text = string.gsub(Text, "[%[%]]", "")
+	Text = string.gsub(Text, "[%.,:;%-']", "")
+	return Text
+end
+
+function GearScore_SetRowMatchesEquipped(NormText, EquippedNorm)
+	if not NormText or not EquippedNorm or string.len(NormText) < 8 then return nil; end
+
+	if EquippedNorm[NormText] then return 1; end
+	for EquippedName, _ in pairs(EquippedNorm) do
+		if EquippedName and string.len(EquippedName) >= 8 then
+			if string.find(EquippedName, NormText, 1, true) or string.find(NormText, EquippedName, 1, true) then
+				return 1
+			end
+		end
+	end
+
+	return nil
+end
+
+function GearScore_GetSetRowsForItemName(SetData, ItemName)
+	local Rows = {}
+	local NormItemName = GearScore_NormalizeSetItemName(ItemName)
+	if not SetData or not SetData.Items or not NormItemName then return Rows; end
+
+	for _, RowText in ipairs(SetData.Items) do
+		local NormRow = GearScore_NormalizeSetItemName(RowText)
+		if NormRow and string.len(NormRow) >= 8 then
+			if string.find(NormItemName, NormRow, 1, true) or string.find(NormRow, NormItemName, 1, true) then
+				Rows[RowText] = 1
+				Rows[NormRow] = 1
+			end
+		end
+	end
+
+	return Rows
+end
+
+function GearScore_FindServerSetRow(ServerSet, Text)
+	if not ServerSet or not Text then return nil; end
+
+	local NormText = GearScore_NormalizeSetItemName(Text)
+	local Row = ServerSet.Rows[Text] or ServerSet.FullNames[Text]
+	if not Row and NormText then
+		Row = ServerSet.NormRows[NormText] or ServerSet.NormFullNames[NormText]
+	end
+	return Row
+end
+
+function GearScore_GetVisibleSetItemColor(Tooltip, SetData)
+	if not Tooltip or not SetData or not SetData.Name then return nil; end
+
+	local ReadingItems = nil
+	for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if Text then
+			local SetName = string.match(Text, "^(.-)%s*%(%d+/%d+%)$")
+			if SetName and SetName == SetData.Name then
+				ReadingItems = 1
+			elseif ReadingItems then
+				if string.find(Text, "^%(") or string.find(Text, ":") or string.find(Text, "^%d") then
+					ReadingItems = nil
+				elseif Left.GetTextColor then
+					local Red, Green, Blue = Left:GetTextColor()
+					if Red and Green and Blue and not (Red < 0.65 and Green < 0.65 and Blue < 0.65) then
+						return { Red = Red, Green = Green, Blue = Blue }
+					end
+				end
+			end
+		elseif ReadingItems then
+			ReadingItems = nil
+		end
+	end
+
+	return nil
+end
+
+function GearScore_GetCurrentVisibleSetRows(Tooltip, SetData)
+	local CurrentRows = {}
+	if not Tooltip or not SetData or not SetData.Name then return CurrentRows; end
+
+	local ReadingItems = nil
+	for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if Text then
+			local SetName = string.match(Text, "^(.-)%s*%(%d+/%d+%)$")
+			if SetName and SetName == SetData.Name then
+				ReadingItems = 1
+			elseif ReadingItems then
+				if string.find(Text, "^%(") or string.find(Text, ":") or string.find(Text, "^%d") then
+					ReadingItems = nil
+				elseif SetData.ItemMap[Text] and GearScore_IsSetLineHighlighted(Left) then
+					CurrentRows[Text] = 1
+					local NormText = GearScore_NormalizeSetItemName(Text)
+					if NormText then CurrentRows[NormText] = 1; end
+				end
+			end
+		elseif ReadingItems then
+			ReadingItems = nil
+		end
+	end
+
+	return CurrentRows
+end
+
+function GearScore_GetRealEquippedSetPieces(Record, SetData)
+	local Equipped = {}
+	local EquippedNorm = {}
+	local EquippedRows = {}
+	local EquippedDisplayNames = {}
+	local Count = 0
+	if not Record or not Record.Equip or not SetData or not SetData.Name then return Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, Count; end
+
+	for Slot = 1, 18 do
+		local ItemCode = Record.Equip[Slot]
+		local EquippedSetData = GearScore_GetItemSetDataFromCode(ItemCode)
+		if EquippedSetData and EquippedSetData.Name == SetData.Name then
+			local ItemName = GearScore_GetTooltipItemNameFromCode(ItemCode) or GearScore_GetItemNameFromCode(ItemCode)
+			local HighlightedRows = GearScore_GetHighlightedSetRowsFromCode(ItemCode, SetData.Name)
+			for RowName, _ in pairs(HighlightedRows) do
+				EquippedRows[RowName] = 1
+			end
+			if ItemName and not Equipped[ItemName] then
+				Equipped[ItemName] = 1
+				local NormName = GearScore_NormalizeSetItemName(ItemName)
+				if NormName then EquippedNorm[NormName] = 1; end
+				local MatchedRows = GearScore_GetSetRowsForItemName(SetData, ItemName)
+				for RowName, _ in pairs(MatchedRows) do
+					EquippedRows[RowName] = 1
+					EquippedDisplayNames[RowName] = ItemName
+				end
+				Count = Count + 1
+				GearScore_TransmogSetDebug("equipped set piece slot "..tostring(Slot).." "..tostring(ItemName))
+			end
+		end
+	end
+
+	return Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, Count
+end
+
+function GearScore_PatchVisibleSetTooltip(Tooltip, SetData, Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, CurrentRows, ServerSet, CurrentServerRow, EquippedCount)
+	if not Tooltip or not SetData or not Equipped then return nil; end
+	local Patched = nil
+	local Highlighted = 0
+	local EquippedColor = GearScore_GetVisibleSetItemColor(Tooltip, SetData) or { Red = 1, Green = 0.82, Blue = 0 }
+	local InSetItems = nil
+	local TitleLeft = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft1")
+	local TitleText = TitleLeft and TitleLeft:GetText()
+	local TitleClean = GearScore_CleanTooltipText(TitleText)
+	local NormTitle = GearScore_NormalizeSetItemName(TitleClean)
+	local TitleRed, TitleGreen, TitleBlue
+	if TitleLeft and TitleLeft.GetTextColor then
+		TitleRed, TitleGreen, TitleBlue = TitleLeft:GetTextColor()
+	end
+
+	for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if Text then
+			local SetName = string.match(Text, "^(.-)%s*%(%d+/%d+%)$")
+			if SetName and SetName == SetData.Name then
+				Left:SetText(SetData.Name.." ("..EquippedCount.."/"..SetData.Total..")")
+				Left:SetTextColor(1, 0.82, 0)
+				InSetItems = 1
+				Patched = 1
+			elseif InSetItems then
+				if string.find(Text, "^%(") or string.find(Text, ":") or string.find(Text, "^%d") then
+					InSetItems = nil
+				else
+					local NormText = GearScore_NormalizeSetItemName(Text)
+					local ServerRow = GearScore_FindServerSetRow(ServerSet, Text)
+					local RowStyle = EquippedRows and (EquippedRows[Text] or (NormText and EquippedRows[NormText]))
+					local IsSetRow = SetData.ItemMap[Text] or ServerRow or RowStyle or GearScore_SetRowMatchesEquipped(NormText, EquippedNorm)
+					if IsSetRow then
+						local FullName = (ServerRow and ServerRow.FullName) or (EquippedDisplayNames and (EquippedDisplayNames[Text] or (NormText and EquippedDisplayNames[NormText])))
+						local NormFullName = GearScore_NormalizeSetItemName(FullName)
+						local IsCurrent = (CurrentServerRow and ServerRow and CurrentServerRow.Slot == ServerRow.Slot)
+						if not IsCurrent and NormTitle then
+							IsCurrent = (NormText and (string.find(NormTitle, NormText, 1, true) or string.find(NormText, NormTitle, 1, true))) or (NormFullName and (NormFullName == NormTitle or string.find(NormTitle, NormFullName, 1, true) or string.find(NormFullName, NormTitle, 1, true)))
+						end
+						if not IsCurrent then
+							IsCurrent = CurrentRows and (CurrentRows[Text] or (NormText and CurrentRows[NormText]))
+						end
+						if FullName then Left:SetText("  "..FullName); else Left:SetText("  "..Text); end
+						if Equipped[Text] or GearScore_SetRowMatchesEquipped(NormText, EquippedNorm) or RowStyle or ServerRow then
+							if IsCurrent then
+								Left:SetTextColor(1, 0.45, 0)
+							else
+								Left:SetTextColor(EquippedColor.Red, EquippedColor.Green, EquippedColor.Blue)
+							end
+							Highlighted = Highlighted + 1
+						end
+						Patched = 1
+					end
+				end
+			end
+		end
+	end
+
+	if TitleLeft then
+		if TitleText then TitleLeft:SetText(TitleText); end
+		if TitleRed and TitleGreen and TitleBlue then TitleLeft:SetTextColor(TitleRed, TitleGreen, TitleBlue); end
+	end
+
+	GearScore_TransmogSetDebug("visible set highlighted "..tostring(Highlighted).." lines")
+	return Patched
+end
+
+function GearScore_PatchVisibleSetBonuses(Tooltip, SetData, EquippedCount)
+	if not Tooltip or not SetData or not SetData.Name or not EquippedCount then return; end
+
+	local InSetBlock = nil
+	local SeenBonus = nil
+	local Highlighted = 0
+	for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if Text then
+			local SetName = string.match(Text, "^(.-)%s*%(%d+/%d+%)$")
+			if SetName and SetName == SetData.Name then
+				InSetBlock = 1
+			elseif InSetBlock then
+				local Required = tonumber(string.match(Text, "%((%d+)%s+"))
+				if Required and string.find(Text, ":") then
+					SeenBonus = 1
+					if Required <= EquippedCount then
+						Left:SetTextColor(0, 1, 0)
+						Highlighted = Highlighted + 1
+					end
+				elseif SeenBonus and (string.find(Text, "^%S") and not string.find(Text, "^%(")) then
+					break
+				end
+			end
+		elseif SeenBonus then
+			break
+		end
+	end
+
+	GearScore_TransmogSetDebug("visible set bonuses highlighted "..tostring(Highlighted).." lines")
+end
+
+function GearScore_IsSocketBonusLine(Text)
+	if not Text then return nil; end
+	if string.find(Text, "соответствии цвета") then return 1; end
+	if string.find(Text, "відповідності кольор") then return 1; end
+	if string.find(Text, "Socket Bonus") then return 1; end
+	return nil
+end
+
+function GearScore_IsGemEffectLine(Text)
+	if not Text then return nil; end
+	if GearScore_IsSocketBonusLine(Text) then return 1; end
+	if string.find(Text, "^Комплект %(") then return nil; end
+	if string.find(Text, "Socket") then return 1; end
+	if string.find(Text, "Meta") then return 1; end
+	if string.find(Text, "мета") then return 1; end
+	if GearScore_IsMetaGemLine(Text) then return 1; end
+	return nil
+end
+
+function GearScore_IsMetaGemLine(Text)
+	if not Text then return nil; end
+	if string.find(Text, "Требуется хотя бы") then return 1; end
+	if string.find(Text, "Потріб") and string.find(Text, "кам") then return 1; end
+	if string.find(Text, "Requires at least") then return 1; end
+	return nil
+end
+
+function GearScore_IsMetaSocketBlockLine(Text)
+	if not Text then return nil; end
+	if GearScore_IsSocketBonusLine(Text) then return 1; end
+	if GearScore_IsMetaGemLine(Text) then return 1; end
+	return nil
+end
+
+function GearScore_GetTooltipLineColor(Tooltip, Line)
+	local Left = Tooltip and GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..Line)
+	if Left and Left.GetTextColor then
+		local Red, Green, Blue = Left:GetTextColor()
+		return Red, Green, Blue
+	end
+	return nil, nil, nil
+end
+
+function GearScore_TooltipHasCleanLine(Tooltip, CleanText)
+	if not Tooltip or not CleanText then return nil; end
+	for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if Text == CleanText then return 1; end
+	end
+	return nil
+end
+
+function GearScore_FindSocketInsertLine(Tooltip)
+	if not Tooltip then return nil; end
+	for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if GearScore_IsSocketBonusLine(Text) then return i; end
+	end
+	for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if Text and string.match(Text, "^(.-)%s*%(%d+/%d+%)$") then return i; end
+	end
+	return Tooltip:NumLines() + 1
+end
+
+function GearScore_InsertTooltipLeftLine(Tooltip, Line, Text, Red, Green, Blue)
+	if not Tooltip or not Line or not Text then return; end
+
+	local Lines = Tooltip:NumLines()
+	local Existing = {}
+	for i = Line, Lines do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		if Left then
+			local R, G, B = GearScore_GetTooltipLineColor(Tooltip, i)
+			Existing[i] = { Text = Left:GetText(), Red = R, Green = G, Blue = B }
+		end
+	end
+
+	Tooltip:AddLine(" ")
+	for i = Lines, Line, -1 do
+		local Target = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..(i + 1))
+		local Source = Existing[i]
+		if Target and Source then
+			Target:SetText(Source.Text or "")
+			if Source.Red and Source.Green and Source.Blue then Target:SetTextColor(Source.Red, Source.Green, Source.Blue); end
+		end
+	end
+
+	local Insert = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..Line)
+	if Insert then
+		Insert:SetText(Text)
+		if Red and Green and Blue then Insert:SetTextColor(Red, Green, Blue); end
+	end
+end
+
+function GearScore_PatchVisibleSocketBonus(Tooltip, RealItemCode, SocketInfo)
+	if not Tooltip or not RealItemCode or RealItemCode == "0:0" then return; end
+
+	local RealTooltip = GearScore_GetHiddenSetTooltip()
+	RealTooltip:ClearLines()
+	RealTooltip:SetHyperlink("item:"..RealItemCode)
+
+	local MissingGemLines = {}
+	local RealSocketLines = {}
+	local RealText, RealRed, RealGreen, RealBlue = nil, nil, nil, nil
+	for i = 1, RealTooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(RealTooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if GearScore_IsGemEffectLine(Text) then
+			local Red, Green, Blue = GearScore_GetTooltipLineColor(RealTooltip, i)
+			local GemLine = { Text = Text, Red = Red, Green = Green, Blue = Blue }
+			RealSocketLines[Text] = GemLine
+			local NormText = GearScore_NormalizeSetItemName(Text)
+			if NormText then RealSocketLines[NormText] = GemLine; end
+			if not GearScore_TooltipHasCleanLine(Tooltip, Text) then
+				tinsert(MissingGemLines, GemLine)
+			end
+		end
+		if GearScore_IsSocketBonusLine(Text) then
+			RealText = Text
+			if Left.GetTextColor then RealRed, RealGreen, RealBlue = Left:GetTextColor(); end
+		end
+	end
+
+	local ColoredGemLines = 0
+	for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		local NormText = GearScore_NormalizeSetItemName(Text)
+		local RealLine = Text and (RealSocketLines[Text] or (NormText and RealSocketLines[NormText]))
+		if Left and RealLine and GearScore_IsMetaSocketBlockLine(Text) then
+			if GearScore_IsMetaSocketBlockLine(Text) then
+				Left:SetText(Text)
+				if SocketInfo and SocketInfo.MetaActive == 1 then
+					Left:SetTextColor(1, 1, 1)
+					GearScore_TransmogSetDebug("forced white active meta line "..tostring(i))
+				elseif SocketInfo and SocketInfo.MetaActive == 0 then
+					Left:SetTextColor(0.5, 0.5, 0.5)
+					GearScore_TransmogSetDebug("forced gray inactive meta line "..tostring(i))
+				end
+			end
+			ColoredGemLines = ColoredGemLines + 1
+		end
+	end
+	if ColoredGemLines > 0 then GearScore_TransmogSetDebug("colored visible gem lines "..tostring(ColoredGemLines)); end
+
+	if RealText then for i = 1, Tooltip:NumLines() do
+		local Left = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft"..i)
+		local Text = Left and GearScore_CleanTooltipText(Left:GetText())
+		if GearScore_IsSocketBonusLine(Text) then
+			Left:SetText(RealText)
+			if SocketInfo and SocketInfo.SocketBonusActive == 1 then
+				Left:SetTextColor(1, 1, 1)
+				GearScore_TransmogSetDebug("patched active visible socket bonus")
+			elseif SocketInfo and SocketInfo.SocketBonusActive == 0 then
+				Left:SetTextColor(0.5, 0.5, 0.5)
+				GearScore_TransmogSetDebug("patched inactive visible socket bonus")
+			else
+				GearScore_TransmogSetDebug("patched visible socket bonus text")
+			end
+			break
+		end
+	end end
+
+	if table.getn(MissingGemLines) > 0 then
+		local InsertLine = GearScore_FindSocketInsertLine(Tooltip)
+		for _, GemLine in ipairs(MissingGemLines) do
+			GearScore_InsertTooltipLeftLine(Tooltip, InsertLine, GemLine.Text, GemLine.Red, GemLine.Green, GemLine.Blue)
+			InsertLine = InsertLine + 1
+		end
+		GearScore_TransmogSetDebug("inserted missing gem lines "..tostring(table.getn(MissingGemLines)))
+	end
+
+	if RealText and table.getn(MissingGemLines) == 0 then return; end
+	if RealText then return; end
+	GearScore_TransmogSetDebug("real socket bonus exists but visible line is missing")
+end
+
+function GearScore_AddRealSetBlock(Tooltip, SetData, Equipped, EquippedCount)
+	if not Tooltip or not SetData or not Equipped then return; end
+
+	Tooltip:AddLine(" ")
+	Tooltip:AddLine("Реальний комплект: "..SetData.Name.." ("..EquippedCount.."/"..SetData.Total..")", 1, 0.82, 0)
+	for _, ItemName in ipairs(SetData.Items) do
+		if Equipped[ItemName] then
+			Tooltip:AddLine(ItemName, 1, 0.82, 0)
+		else
+			Tooltip:AddLine(ItemName, 0.5, 0.5, 0.5)
+		end
+	end
+end
+
+function GearScore_FixTransmogSetTooltip(Tooltip, UnitToken, Slot)
+	if not Tooltip or not UnitToken or not Slot then return; end
+	if not UnitExists(UnitToken) or not UnitIsPlayer(UnitToken) then return; end
+
+	local Name = UnitName(UnitToken)
+	if not Name then return; end
+	if not GS_Data or not GS_Data[GetRealmName()] or not GS_Data[GetRealmName()].Players then return; end
+
+	local Record = GS_Data[GetRealmName()].Players[Name]
+	if not Record or not Record.Equip then
+		if Name == UnitName("player") then
+			GearScore_GetScore(Name, "player")
+			Record = GS_Data[GetRealmName()].Players[Name]
+			if Record and Record.Equip then
+				GearScore_TransmogSetDebug("built self record for "..Name)
+			end
+		end
+	end
+	if not Record or not Record.Equip then
+		GearScore_TransmogSetDebug("no server record for "..Name..", requesting")
+		GearScore_RequestServerItemData(Name)
+		return
+	end
+
+	local RealItemCode = Record.Equip[Slot]
+	if (not RealItemCode or RealItemCode == "0:0") and GetMouseFocus then
+		local Focus = GetMouseFocus()
+		local FocusId = Focus and Focus.GetID and Focus:GetID()
+		if FocusId and FocusId ~= Slot and Record.Equip[FocusId] and Record.Equip[FocusId] ~= "0:0" then
+			GearScore_TransmogSetDebug("slot fallback "..tostring(Slot).." -> focus id "..tostring(FocusId))
+			Slot = FocusId
+			RealItemCode = Record.Equip[Slot]
+		end
+	end
+	GearScore_TransmogSetDebug("tooltip "..Name.." slot "..tostring(Slot).." real="..tostring(RealItemCode).." source="..tostring(Record.Scanned))
+	local SocketInfo = Record.Sockets and Record.Sockets.BySlot and Record.Sockets.BySlot[Slot]
+	GearScore_PatchVisibleSocketBonus(Tooltip, RealItemCode, SocketInfo)
+	local SetData = GearScore_GetItemSetDataFromCode(RealItemCode)
+	if not SetData then
+		GearScore_TransmogSetDebug("no set data for real item "..tostring(RealItemCode))
+		Tooltip:Show()
+		return
+	end
+
+	local Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, EquippedCount = GearScore_GetRealEquippedSetPieces(Record, SetData)
+	local CurrentItemName = GearScore_GetTooltipItemNameFromCode(RealItemCode) or GearScore_GetItemNameFromCode(RealItemCode)
+	local CurrentRows = GearScore_GetSetRowsForItemName(SetData, CurrentItemName)
+	local CurrentServerRow = Record.Sets and Record.Sets.BySlot and Record.Sets.BySlot[Slot]
+	local ServerSet = CurrentServerRow and Record.Sets and Record.Sets[CurrentServerRow.SetId]
+	GearScore_TransmogSetDebug("equipped real set count "..tostring(EquippedCount).."/"..tostring(SetData.Total))
+	if EquippedCount <= 0 then return; end
+
+	if not GearScore_PatchVisibleSetTooltip(Tooltip, SetData, Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, CurrentRows, ServerSet, CurrentServerRow, EquippedCount) then
+		GearScore_TransmogSetDebug("visible set block not found, adding real block")
+		GearScore_AddRealSetBlock(Tooltip, SetData, Equipped, EquippedCount)
+	else
+		GearScore_TransmogSetDebug("patched visible set block")
+	end
+	GearScore_PatchVisibleSetBonuses(Tooltip, SetData, EquippedCount)
+	Tooltip:Show()
 end
 
 function GearScore_PrimeServerItemCache(ItemCode)
@@ -651,7 +1308,60 @@ function GearScore_ParseServerMeta(Field)
 	return Meta
 end
 
-function GearScore_SeedServerRecord(Name, Equip, ServerStats, ServerMeta)
+function GearScore_DecodeServerSetText(Text)
+	if not Text then return ""; end
+	Text = string.gsub(Text, "%%(%x%x)", function(Hex)
+		return string.char(tonumber(Hex, 16))
+	end)
+	return Text
+end
+
+function GearScore_ParseServerSets(Field)
+	if not Field or string.sub(Field, 1, 5) ~= "SETS@" then return nil; end
+
+	local Sets = { BySlot = {} }
+	for Entry in string.gmatch(string.sub(Field, 6), "[^^]+") do
+		local Slot, SetId, RowName, FullName = string.match(Entry, "^(%d+)~(%d+)~(.-)~(.*)$")
+		Slot = tonumber(Slot)
+		SetId = tonumber(SetId)
+		if Slot and SetId and RowName and FullName then
+			RowName = GearScore_DecodeServerSetText(RowName)
+			FullName = GearScore_DecodeServerSetText(FullName)
+			if not Sets[SetId] then Sets[SetId] = { Rows = {}, NormRows = {}, FullNames = {}, NormFullNames = {} }; end
+			local Row = { Slot = Slot, SetId = SetId, RowName = RowName, FullName = FullName }
+			Sets[SetId].Rows[RowName] = Row
+			Sets[SetId].FullNames[FullName] = Row
+			local NormRow = GearScore_NormalizeSetItemName(RowName)
+			if NormRow then Sets[SetId].NormRows[NormRow] = Row; end
+			local NormFullName = GearScore_NormalizeSetItemName(FullName)
+			if NormFullName then Sets[SetId].NormFullNames[NormFullName] = Row; end
+			Sets.BySlot[Slot] = Row
+		end
+	end
+
+	if not next(Sets.BySlot) then return nil; end
+	return Sets
+end
+
+function GearScore_ParseServerSockets(Field)
+	if not Field or string.sub(Field, 1, 5) ~= "SOCK@" then return nil; end
+
+	local Sockets = { BySlot = {} }
+	for Entry in string.gmatch(string.sub(Field, 6), "[^^]+") do
+		local Slot, SocketBonusActive, MetaActive = string.match(Entry, "^(%d+)~([%-0-9]+)~([%-0-9]+)$")
+		Slot = tonumber(Slot)
+		SocketBonusActive = tonumber(SocketBonusActive)
+		MetaActive = tonumber(MetaActive)
+		if Slot then
+			Sockets.BySlot[Slot] = { SocketBonusActive = SocketBonusActive or 0, MetaActive = MetaActive or -1 }
+		end
+	end
+
+	if not next(Sockets.BySlot) then return nil; end
+	return Sockets
+end
+
+function GearScore_SeedServerRecord(Name, Equip, ServerStats, ServerMeta, ServerSets, ServerSockets)
 	if not Name or not Equip or not ServerMeta then return; end
 	if not GS_Data or not GS_Data[GetRealmName()] or not GS_Data[GetRealmName()].Players then return; end
 
@@ -676,7 +1386,9 @@ function GearScore_SeedServerRecord(Name, Equip, ServerStats, ServerMeta)
 		["Average"] = ExistingRecord.Average or 0,
 		["Equip"] = Equip,
 		["ServerCachedAt"] = GetTime(),
-		["Stats"] = ServerStats or ExistingRecord.Stats
+		["Stats"] = ServerStats or ExistingRecord.Stats,
+		["Sets"] = ServerSets or ExistingRecord.Sets,
+		["Sockets"] = ServerSockets or ExistingRecord.Sockets
 	}
 end
 
@@ -873,7 +1585,7 @@ function GearScore_BuildRecordFromItemCodes(Name, Target, EquipCodes, ScanSource
 
 	if not RaceEnglish or not ClassEnglish or not Level or not Faction then return; end
 	GS_Data[GetRealmName()].Players[Name] = { ["Name"] = Name, ["GearScore"] = floor(GearScore), ["PVP"] = 1, ["Level"] = Level, ["Faction"] = Faction, ["Sex"] = Sex, ["Guild"] = GuildName,
-	["Race"] = GS_Races[RaceEnglish], ["Class"] =  GS_Classes[ClassEnglish], ["Spec"] = 1, ["Location"] = currentzone, ["Scanned"] = ScanSource or "Server", ["Date"] = GearScore_GetTimeStamp(), ["Average"] = floor((LevelTotal / ItemCount)+0.5), ["Equip"] = TempEquip, ["ServerCachedAt"] = GetTime(), ["Stats"] = ServerStats or (ExistingRecord and ExistingRecord.Stats)}
+	["Race"] = GS_Races[RaceEnglish], ["Class"] =  GS_Classes[ClassEnglish], ["Spec"] = 1, ["Location"] = currentzone, ["Scanned"] = ScanSource or "Server", ["Date"] = GearScore_GetTimeStamp(), ["Average"] = floor((LevelTotal / ItemCount)+0.5), ["Equip"] = TempEquip, ["ServerCachedAt"] = GetTime(), ["Stats"] = ServerStats or (ExistingRecord and ExistingRecord.Stats), ["Sets"] = ExistingRecord and ExistingRecord.Sets, ["Sockets"] = ExistingRecord and ExistingRecord.Sockets}
 	return true
 end
 
@@ -884,6 +1596,7 @@ function GearScore_HandleServerItemReply(Message, Sender)
 	if not Fields[1] then return; end
 
 	local Name = Fields[1]
+	GearScore_TransmogSetDebug("server reply for "..Name.." from "..tostring(Sender))
 	local Equip = {}
 	for i = 1, 18 do
 		Equip[i] = Fields[i + 1] or "0:0"
@@ -891,13 +1604,33 @@ function GearScore_HandleServerItemReply(Message, Sender)
 	Equip[4] = "0:0"
 	local ServerStats = nil
 	local ServerMeta = nil
+	local ServerSets = nil
+	local ServerSockets = nil
 	for i = 20, table.getn(Fields) do
 		ServerStats = GearScore_ParseServerStats(Fields[i]) or ServerStats
 		ServerMeta = GearScore_ParseServerMeta(Fields[i]) or ServerMeta
+		ServerSets = GearScore_ParseServerSets(Fields[i]) or ServerSets
+		ServerSockets = GearScore_ParseServerSockets(Fields[i]) or ServerSockets
 	end
-	GearScore_SeedServerRecord(Name, Equip, ServerStats, ServerMeta)
+	if ServerSets and ServerSets.BySlot then
+		local SetRows = 0
+		for _, _ in pairs(ServerSets.BySlot) do SetRows = SetRows + 1; end
+		GearScore_TransmogSetDebug("server set rows "..tostring(SetRows))
+	else
+		GearScore_TransmogSetDebug("server set rows none")
+	end
+	GearScore_SeedServerRecord(Name, Equip, ServerStats, ServerMeta, ServerSets, ServerSockets)
 	GearScore_BuildRecordFromItemCodes(Name, GearScore_GetUnitTokenByName(Name), Equip, "Server", nil, ServerStats, ServerMeta)
+	if ServerSets and GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[Name] then
+		GS_Data[GetRealmName()].Players[Name].Sets = ServerSets
+	end
+	if ServerSockets and GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[Name] then
+		GS_Data[GetRealmName()].Players[Name].Sockets = ServerSockets
+	end
 	if UnitName("mouseover") == Name then GameTooltip:SetUnit(Name); end
+	if GS_LastInventoryTooltip and GS_LastInventoryTooltip.Name == Name and (GetTime() - GS_LastInventoryTooltip.Time) < 5 and GameTooltip:IsShown() then
+		GearScore_FixTransmogSetTooltip(GameTooltip, GS_LastInventoryTooltip.UnitToken, GS_LastInventoryTooltip.Slot)
+	end
 	if GS_DisplayPlayer and strlower(GS_DisplayPlayer) == strlower(Name) then GS_DisplayPlayer = Name; end
 	if ( GS_DisplayPlayer == Name ) and ( GS_DisplayFrame:IsVisible() ) then GearScore_DisplayUnit(Name, 1); end
 end
@@ -1471,9 +2204,38 @@ function GearScore_HookItem(ItemName, ItemLink, Tooltip)
 		end
     end
 end
-function GearScore_OnEnter(Name, ItemSlot, Argument)
+function GearScore_OnEnter(Tooltip, UnitToken, ItemSlot, Argument)
 	if ( UnitName("target") ) then NotifyInspect("target"); GS_LastNotified = UnitName("target"); end
-	local OriginalOnEnter = GearScore_Original_SetInventoryItem(Name, ItemSlot, Argument); return OriginalOnEnter
+	local OriginalOnEnter = GearScore_Original_SetInventoryItem(Tooltip, UnitToken, ItemSlot, Argument)
+	local ResolvedUnit = UnitToken
+	if not (ResolvedUnit and UnitExists(ResolvedUnit) and UnitIsPlayer(ResolvedUnit)) then
+		if UnitExists("target") and UnitIsPlayer("target") then ResolvedUnit = "target"; else ResolvedUnit = nil; end
+	end
+	local FocusName = nil
+	local FocusId = nil
+	if GetMouseFocus then
+		local Focus = GetMouseFocus()
+		FocusName = Focus and Focus.GetName and Focus:GetName()
+		FocusId = Focus and Focus.GetID and Focus:GetID()
+	end
+	local TooltipItemName, TooltipItemLink = (Tooltip or GameTooltip):GetItem()
+	local TooltipItemCode, TooltipItemId = GearScore_GetItemCode(TooltipItemLink)
+	GearScore_TransmogSetDebug("SetInventoryItem unit="..tostring(UnitToken).." resolved="..tostring(ResolvedUnit).." slot="..tostring(ItemSlot).." focus="..tostring(FocusName).."#"..tostring(FocusId).." item="..tostring(TooltipItemId))
+	if ResolvedUnit and ItemSlot then
+		GS_LastInventoryTooltip = { ["Name"] = UnitName(ResolvedUnit), ["UnitToken"] = ResolvedUnit, ["Slot"] = ItemSlot, ["Time"] = GetTime() }
+		GearScore_RequestServerItemData(UnitName(ResolvedUnit))
+		GearScore_FixTransmogSetTooltip(Tooltip or GameTooltip, ResolvedUnit, ItemSlot)
+	end
+	return OriginalOnEnter
+end
+function GS_TmogSetDebugToggle()
+	if GS_TransmogSetDebug then
+		GS_TransmogSetDebug = nil
+		if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100GSTSet debug disabled|r"); end
+	else
+		GS_TransmogSetDebug = 1
+		if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100GSTSet debug enabled|r"); end
+	end
 end
 function MyPaperDoll()
 	GearScore_GetScore(UnitName("player"), "player"); GearScore_Send(UnitName("player"), "ALL"); 
@@ -2276,6 +3038,8 @@ SlashCmdList["MY3SCRIPT"] = GS_SCANSET
 SLASH_MY3SCRIPT3 = "/gs"
 SLASH_MY3SCRIPT1 = "/gscan"
 SLASH_MY3SCRIPT2 = "/gsearch"
+SlashCmdList["GSTSETDEBUG"] = GS_TmogSetDebugToggle
+SLASH_GSTSETDEBUG1 = "/gstsetdebug"
 SlashCmdList["MY4SCRIPT"] = GS_BANSET
 SLASH_MY4SCRIPT1 = "/gsban"
 GS_DisplayFrame:Hide()
