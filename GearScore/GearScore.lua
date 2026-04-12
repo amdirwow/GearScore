@@ -336,7 +336,9 @@ function GearScore_HasFreshServerRecord(Name)
 
 	local Record = GS_Data[GetRealmName()].Players[Name]
 	if not Record or Record.Scanned ~= "Server" or not Record.ServerCachedAt then return false; end
-	return (GetTime() - Record.ServerCachedAt) < GS_ServerCacheTTL
+	if Record.ServerBridgeVersion ~= 2 then return false; end
+	local Age = GetTime() - Record.ServerCachedAt
+	return Age >= 0 and Age < GS_ServerCacheTTL
 end
 
 function GearScore_RequestServerItemData(Name)
@@ -947,6 +949,40 @@ function GearScore_AddRealSetBlock(Tooltip, SetData, Equipped, EquippedCount)
 	end
 end
 
+function GearScore_FixRecordItemTooltip(Tooltip, Record, Slot, Name)
+	if not Tooltip or not Record or not Record.Equip or not Slot then return; end
+
+	local RealItemCode = Record.Equip[Slot]
+	if not RealItemCode or RealItemCode == "0:0" then return; end
+
+	local SocketInfo = Record.Sockets and Record.Sockets.BySlot and Record.Sockets.BySlot[Slot]
+	GearScore_PatchVisibleSocketBonus(Tooltip, RealItemCode, SocketInfo)
+
+	local SetData = GearScore_GetItemSetDataFromCode(RealItemCode)
+	if not SetData then
+		GearScore_TransmogSetDebug("no set data for real item "..tostring(RealItemCode))
+		Tooltip:Show()
+		return
+	end
+
+	local Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, EquippedCount = GearScore_GetRealEquippedSetPieces(Record, SetData)
+	local CurrentItemName = GearScore_GetTooltipItemNameFromCode(RealItemCode) or GearScore_GetItemNameFromCode(RealItemCode)
+	local CurrentRows = GearScore_GetSetRowsForItemName(SetData, CurrentItemName)
+	local CurrentServerRow = Record.Sets and Record.Sets.BySlot and Record.Sets.BySlot[Slot]
+	local ServerSet = CurrentServerRow and Record.Sets and Record.Sets[CurrentServerRow.SetId]
+	GearScore_TransmogSetDebug("equipped real set count "..tostring(EquippedCount).."/"..tostring(SetData.Total))
+	if EquippedCount <= 0 then return; end
+
+	if not GearScore_PatchVisibleSetTooltip(Tooltip, SetData, Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, CurrentRows, ServerSet, CurrentServerRow, EquippedCount) then
+		GearScore_TransmogSetDebug("visible set block not found, adding real block")
+		GearScore_AddRealSetBlock(Tooltip, SetData, Equipped, EquippedCount)
+	else
+		GearScore_TransmogSetDebug("patched visible set block")
+	end
+	GearScore_PatchVisibleSetBonuses(Tooltip, SetData, EquippedCount)
+	Tooltip:Show()
+end
+
 function GearScore_FixTransmogSetTooltip(Tooltip, UnitToken, Slot)
 	if not Tooltip or not UnitToken or not Slot then return; end
 	if not UnitExists(UnitToken) or not UnitIsPlayer(UnitToken) then return; end
@@ -982,31 +1018,7 @@ function GearScore_FixTransmogSetTooltip(Tooltip, UnitToken, Slot)
 		end
 	end
 	GearScore_TransmogSetDebug("tooltip "..Name.." slot "..tostring(Slot).." real="..tostring(RealItemCode).." source="..tostring(Record.Scanned))
-	local SocketInfo = Record.Sockets and Record.Sockets.BySlot and Record.Sockets.BySlot[Slot]
-	GearScore_PatchVisibleSocketBonus(Tooltip, RealItemCode, SocketInfo)
-	local SetData = GearScore_GetItemSetDataFromCode(RealItemCode)
-	if not SetData then
-		GearScore_TransmogSetDebug("no set data for real item "..tostring(RealItemCode))
-		Tooltip:Show()
-		return
-	end
-
-	local Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, EquippedCount = GearScore_GetRealEquippedSetPieces(Record, SetData)
-	local CurrentItemName = GearScore_GetTooltipItemNameFromCode(RealItemCode) or GearScore_GetItemNameFromCode(RealItemCode)
-	local CurrentRows = GearScore_GetSetRowsForItemName(SetData, CurrentItemName)
-	local CurrentServerRow = Record.Sets and Record.Sets.BySlot and Record.Sets.BySlot[Slot]
-	local ServerSet = CurrentServerRow and Record.Sets and Record.Sets[CurrentServerRow.SetId]
-	GearScore_TransmogSetDebug("equipped real set count "..tostring(EquippedCount).."/"..tostring(SetData.Total))
-	if EquippedCount <= 0 then return; end
-
-	if not GearScore_PatchVisibleSetTooltip(Tooltip, SetData, Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, CurrentRows, ServerSet, CurrentServerRow, EquippedCount) then
-		GearScore_TransmogSetDebug("visible set block not found, adding real block")
-		GearScore_AddRealSetBlock(Tooltip, SetData, Equipped, EquippedCount)
-	else
-		GearScore_TransmogSetDebug("patched visible set block")
-	end
-	GearScore_PatchVisibleSetBonuses(Tooltip, SetData, EquippedCount)
-	Tooltip:Show()
+	GearScore_FixRecordItemTooltip(Tooltip, Record, Slot, Name)
 end
 
 function GearScore_PrimeServerItemCache(ItemCode)
@@ -1388,7 +1400,8 @@ function GearScore_SeedServerRecord(Name, Equip, ServerStats, ServerMeta, Server
 		["ServerCachedAt"] = GetTime(),
 		["Stats"] = ServerStats or ExistingRecord.Stats,
 		["Sets"] = ServerSets or ExistingRecord.Sets,
-		["Sockets"] = ServerSockets or ExistingRecord.Sockets
+		["Sockets"] = ServerSockets or ExistingRecord.Sockets,
+		["ServerBridgeVersion"] = 2
 	}
 end
 
@@ -1585,7 +1598,7 @@ function GearScore_BuildRecordFromItemCodes(Name, Target, EquipCodes, ScanSource
 
 	if not RaceEnglish or not ClassEnglish or not Level or not Faction then return; end
 	GS_Data[GetRealmName()].Players[Name] = { ["Name"] = Name, ["GearScore"] = floor(GearScore), ["PVP"] = 1, ["Level"] = Level, ["Faction"] = Faction, ["Sex"] = Sex, ["Guild"] = GuildName,
-	["Race"] = GS_Races[RaceEnglish], ["Class"] =  GS_Classes[ClassEnglish], ["Spec"] = 1, ["Location"] = currentzone, ["Scanned"] = ScanSource or "Server", ["Date"] = GearScore_GetTimeStamp(), ["Average"] = floor((LevelTotal / ItemCount)+0.5), ["Equip"] = TempEquip, ["ServerCachedAt"] = GetTime(), ["Stats"] = ServerStats or (ExistingRecord and ExistingRecord.Stats), ["Sets"] = ExistingRecord and ExistingRecord.Sets, ["Sockets"] = ExistingRecord and ExistingRecord.Sockets}
+	["Race"] = GS_Races[RaceEnglish], ["Class"] =  GS_Classes[ClassEnglish], ["Spec"] = 1, ["Location"] = currentzone, ["Scanned"] = ScanSource or "Server", ["Date"] = GearScore_GetTimeStamp(), ["Average"] = floor((LevelTotal / ItemCount)+0.5), ["Equip"] = TempEquip, ["ServerCachedAt"] = GetTime(), ["Stats"] = ServerStats or (ExistingRecord and ExistingRecord.Stats), ["Sets"] = ExistingRecord and ExistingRecord.Sets, ["Sockets"] = ExistingRecord and ExistingRecord.Sockets, ["ServerBridgeVersion"] = ExistingRecord and ExistingRecord.ServerBridgeVersion}
 	return true
 end
 
@@ -2228,6 +2241,44 @@ function GearScore_OnEnter(Tooltip, UnitToken, ItemSlot, Argument)
 	end
 	return OriginalOnEnter
 end
+
+function GearScore_GearFrameItemOnEnter(Frame)
+	if not Frame or not GS_DisplayPlayer then return; end
+	if not GS_Data or not GS_Data[GetRealmName()] or not GS_Data[GetRealmName()].Players then return; end
+
+	local Slot = Frame:GetID()
+	local Record = GS_Data[GetRealmName()].Players[GS_DisplayPlayer]
+	if not Record or not Record.Equip or not Slot then return; end
+
+	local ItemCode = Record.Equip[Slot]
+	if not ItemCode or ItemCode == "0:0" then return; end
+
+	GearScore_RequestServerItemData(GS_DisplayPlayer)
+	GameTooltip:SetOwner(Frame, "ANCHOR_RIGHT")
+	GameTooltip:ClearLines()
+	GameTooltip:SetHyperlink("item:"..ItemCode)
+	GearScore_TransmogSetDebug("GS frame tooltip "..tostring(GS_DisplayPlayer).." slot "..tostring(Slot).." real="..tostring(ItemCode).." source="..tostring(Record.Scanned))
+	GearScore_FixRecordItemTooltip(GameTooltip, Record, Slot, GS_DisplayPlayer)
+
+	GameTooltip:Show()
+end
+
+function GearScore_GearFrameItemOnLeave(Frame)
+	GameTooltip:Hide()
+end
+
+function GearScore_HookGearFrameTooltips()
+	if GS_GearFrameTooltipsHooked then return; end
+	for i = 1, 18 do
+		local Frame = _G["GS_Frame"..i]
+		if Frame and i ~= 4 then
+			Frame:SetScript("OnEnter", GearScore_GearFrameItemOnEnter)
+			Frame:SetScript("OnLeave", GearScore_GearFrameItemOnLeave)
+		end
+	end
+	GS_GearFrameTooltipsHooked = 1
+end
+
 function GS_TmogSetDebugToggle()
 	if GS_TransmogSetDebug then
 		GS_TransmogSetDebug = nil
@@ -2358,6 +2409,7 @@ end
 													
 
 function GearScore_DisplayUnit(Name, Auto)
+	GearScore_HookGearFrameTooltips()
 	if not ( Name ) then Name = UnitName("player"); end
 	Name = GearScore_NormalizeName(Name)
 	if ( Name == UnitName("player") ) then GearScore_GetScore(UnitName("player"), "player"); end
