@@ -265,7 +265,7 @@ function GearScoreClassScan(Name)
 		end
 		tooltip:UpdateScrolling(180)
 		tooltip:SetHeight(180)
-		if not GS_ExPFrame:IsVisible() then tooltip:Show(); end
+		tooltip:Show()
 		
 
 		

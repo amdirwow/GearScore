@@ -28,97 +28,6 @@
 
 
 
-<StatusBar name="GS_XpBarTemplate" virtual = "true" drawLayer="BACKGROUND" minValue="0" maxValue="100" defaultValue="50">
-				<Scripts>
-					<OnEnter>
-						local Name = tonumber(string.sub(self:GetName(), 9))
-						local count = 0
-						GameTooltip:SetOwner(self, "ANCHOR_Right")
-						GameTooltip:ClearLines(); 
-						GameTooltip:AddLine(GS_InstanceOrder[Name]); 
-						--local StatString =  GS_Data[GetRealmName()].Players[GS_DisplayPlayer].StatString
-						local StatString = GS_Data[GetRealmName()]["CurrentPlayer"]["EXP"]
-						if not StatString then return; end
-						local TempTable = {}
-						--for i,v in pairs(GS_AchInfo[GS_InstanceOrder[Name]]) do
-						--	local InsertionValue = { ["i"] = i, ["v"] = v }
-						--	table.insert(TempTable, InsertionValue )
-						--end
-						--table.sort(TempTable, function(a, b) return a["i"] &lt; b["i"] end )
-							
-
-								for i,v in pairs(GS_AchInfo[GS_InstanceOrder[Name]]) do
-								--if not (GS_BackString[i]) then print(i,v) end
-								count = tonumber(string.sub(StatString, GS_BackString[i],GS_BackString[i]))
-								if not count then count = 0; end
-								GameTooltip:AddDoubleLine(count.." kills ("..(count/0.05).."%)",v,1 - (count/5),0 + (count/5),0,1,1,1)
-
-						end
-						GameTooltip:AddLine(" ")
-						if ( GS_Settings["ShowHelp"] == 1 ) then GameTooltip:AddLine("Remember, this player could be an alt and still know the fights.", 1, 1, 1, 1, true); end
-						GameTooltip:AddLine("*Note: '5' means 5 or more kills")
-						GameTooltip:Show()
-
-					</OnEnter>
-					<OnLeave>
-						GameTooltip:Hide()
-					</OnLeave>
-				</Scripts>
-				<Size>
-					<AbsDimension x="181" y="13"/>
-				</Size>
-				<Anchors>
-					<Anchor point="LEFT">
-						<Offset>
-							<AbsDimension x="-100" y="0"/>
-						</Offset>
-					</Anchor>
-				</Anchors>
-				<Layers>
-			<Layer level="OVERLAY">
-				<FontString name="$parentPercentText" inherits="GameFontNormal" text="OUT OF RANGE / NO TARGET">
-					<Size>
-						<AbsDimension x="199" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT">
-							<Offset x="0" y="5" />
-						</Anchor>
-					</Anchors>
-				</FontString> 
-				<FontString name="$parentInstaceText" inherits="GameFontNormal" text="" justifyH="Left">
-					<Size>
-						<AbsDimension x="299" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT">
-							<Offset x="-150" y="5" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-			</Layer>
-					
-					<Layer level="ARTWORK">
-						<Texture name="$parentLeftTexture" file="Interface\AchievementFrame\UI-Achievement-ProgressBar-Border">
-							<Size>
-								<AbsDimension x="216" y="35"/>
-							</Size>
-							<Anchors>
-								<Anchor point="LEFT">
-									<Offset>
-										<AbsDimension x="-3" y="-4"/>
-									</Offset>
-								</Anchor>
-							</Anchors>
-						
-						</Texture>
-
-
-					</Layer>
-				</Layers>
-				<BarTexture file="Interface\PaperDollInfoFrame\UI-Character-Skills-Bar"/>
-				<BarColor r=".25" g=".25" b=".75"/>
-</StatusBar>
 <StatusBar name="GS_GearCheckBarTemplate" virtual = "true" drawLayer="BACKGROUND" minValue="0" maxValue="100" defaultValue="50">
 				<Scripts>
 					<OnEnter>
@@ -295,7 +204,7 @@
 					</OnEnterPressed>
 				</Scripts>
 			</EditBox>
-			<Button name="GS_SearchButton" inherits="UIPanelButtonTemplate" text="Search">
+			<Button name="GS_SearchButton" inherits="UIPanelButtonTemplate" text="Пошук">
 				<Size>
 					<AbsDimension x="75" y="23" />
 				</Size>
@@ -315,25 +224,7 @@
 					</OnClick>
 				</Scripts>
 			</Button>
-
-
-
-			<Button name="GS_GroupButton" inherits="UIPanelButtonTemplate" text="Database">
-				<Scripts>
-					<OnClick>
-						GearScore_DisplayDatabase(GS_DisplayedGroup, GS_SortedType, 1, (GS_StartPage))
-					</OnClick>
-				</Scripts>
-				<Size>
-					<AbsDimension x="75" y="23" />
-				</Size>
-				<Anchors>
-					<Anchor point="TOPLEFT">
-						<Offset x="13" y="-407" />
-					</Anchor>
-				</Anchors>
-			</Button>
-			<Button name="GS_DeleteButton" inherits="UIPanelButtonTemplate" text="Delete">
+<Button name="GS_DeleteButton" inherits="UIPanelButtonTemplate" text="Видалити">
 				<Size>
 					<AbsDimension x="75" y="23" />
 				</Size>
@@ -348,7 +239,7 @@
 					</OnClick>
 				</Scripts>
 			</Button>
-			<Button name="GS_InviteButton" inherits="UIPanelButtonTemplate" text="Invite">
+			<Button name="GS_InviteButton" inherits="UIPanelButtonTemplate" text="Запросити">
 				<Size>
 					<AbsDimension x="75" y="23" />
 				</Size>
@@ -378,7 +269,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_AverageText" inherits="GameFontNormal" text="Average ItemLevel: 213">
+				<FontString name="GS_AverageText" inherits="GameFontNormal" text="Сер. рівень речей: 213">
 					<Size>
 						<AbsDimension x="200" y="20" />
 					</Size>
@@ -398,7 +289,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_LocationText" inherits="GameFontNormal" text="Seen: Blade's Edge Mountains">
+				<FontString name="GS_LocationText" inherits="GameFontNormal" text="Бачили: Blade's Edge Mountains">
 					<Size>
 						<AbsDimension x="200" y="20" />
 					</Size>
@@ -408,7 +299,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_DateText" inherits="GameFontNormal" text="January 10, 2009">
+				<FontString name="GS_DateText" inherits="GameFontNormal" text="10 січня 2009">
 					<Size>
 						<AbsDimension x="250" y="20" />
 					</Size>
@@ -445,20 +336,6 @@
 			</Layers>
 	</Frame>
 	<Frame name="GS_GearFrame" parent="GS_DisplayFrame" toplevel="true" movable="true" enableMouse="true">
-		<Scripts>
-			<OnUpdate>
-				GS_ExPFrameUpdateCounter = ( GS_ExPFrameUpdateCounter or 0 ) + elapsed
-				if GS_ExPFrameUpdateCounter &gt; 2 then
-						if UnitName("target") and GS_DisplayPlayer == ( UnitName("target") or " " ) then
-								NotifyInspect("target"); 
---ClearAchievementComparisonUnit(); --SetAchievementComparisonUnit("target")		
-							GearScore_HideDatabase(1)
-							--print("Updating")
-						end
-					GS_ExPFrameUpdateCounter = 0
-				end
-			</OnUpdate>
-		</Scripts>
 		<Size>
 			<AbsDimension x="350" y="225" />
 		</Size>
@@ -695,216 +572,7 @@
 		<Size><AbsDimension x="600" y="450" /></Size>
 		<Anchors><Anchor point="TOPLEFT"><Offset x="0" y="0" /></Anchor></Anchors>	
 	</Frame>
-		
-	<Frame name="GS_ExPFrame" parent="GS_DisplayFrame" toplevel="true" movable="true" enableMouse="true">
-		<Scripts><OnLoad>self:Hide()</OnLoad>
-		<OnShow>
-			if UnitName("target") == ( GS_DisplayPlayer or " " ) then 
-				SetAchievementComparisonUnit("target")
-				GearScore_HideDatabase()
-			end
-		</OnShow>
-
-
-
-
-		</Scripts>
-		<Size>
-			<AbsDimension x="350" y="225" />
-		</Size>
-		<Anchors>
-			<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame" >
-				<Offset x="215" y="-56" />
-				
-				
-				
-				
-			</Anchor>
-		</Anchors>
-		<Frames>
-			<StatusBar name="GS_XpBar1" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-20"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar2" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-44"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar3" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-68"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar4" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-92"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar5" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-116"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar6" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-140"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar7" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame"><Offset><AbsDimension x="175" y="-164"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar8" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-188"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar9" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-212"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar10" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-236"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar11" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-260"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar12" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-284"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar13" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-308"/></Offset></Anchor></Anchors>
-			</StatusBar>
-			<StatusBar name="GS_XpBar14" inherits="GS_XpBarTemplate">
-				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_ExPFrame" ><Offset><AbsDimension x="175" y="-332"/></Offset></Anchor></Anchors>
-			</StatusBar>
-</Frames>
-		<Layers>
-			<Layer level="OVERLAY">
-				<FontString name="GS_InstanceStaticText1" inherits="GameFontNormal" text="|cFFFFFFFFRaiding Difficulty Chart" justifyH="Center">
-					<Size>
-						<AbsDimension x="195" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-40" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-	
-				<FontString name="GS_InstanceStaticText2" inherits="GameFontNormal" text="|cFFFFFFFFRaid history requires a target" justifyH="Center">
-					<Size><AbsDimension x="195" y="20" /></Size>
-					<Anchors><Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame"><Offset x="40" y="-304" /></Anchor></Anchors>
-				</FontString>	
-
-				<FontString name="GS_InstanceStaticText3" inherits="GameFontNormal" text="|cFFFFFFFFwithin inspection range." justifyH="Center">
-					<Size><AbsDimension x="195" y="20" /></Size>
-					<Anchors><Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame"><Offset x="40" y="-326" /></Anchor></Anchors>
-				</FontString>
-
-				<FontString name="GS_InstanceText1" inherits="GameFontNormal" text="|cFF09A5B2(2700)|r   Heroics   (iLevel 200)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-62" />
-						</Anchor>
-					</Anchors>
-				</FontString>				
-				<FontString name="GS_InstanceText2" inherits="GameFontNormal" text="|cFF038CE5(2900)|r   Tier   7.1  (iLevel 200)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-84" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-				<FontString name="GS_InstanceText3" inherits="GameFontNormal" text="|cFF346EFC(3300)|r   Tier   7.2  (iLevel 213)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-106" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-				<FontString name="GS_InstanceText4" inherits="GameFontNormal" text="|cFF5763FB(3500)|r   Tier   8.1  (iLevel 219)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-128" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-				<FontString name="GS_InstanceText5" inherits="GameFontNormal" text="|cFF8C52F8(3800)|r   Tier   8.2  (iLevel 226)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-150" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-				<FontString name="GS_InstanceText6" inherits="GameFontNormal" text="|cFFAF47F7(4000)|r   Tier   9.1  (iLevel 232)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-172" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-				<FontString name="GS_InstanceText7" inherits="GameFontNormal" text="|cFFCF5F7C(4500)|r   Tier   9.2  (iLevel 245)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-194" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-				<FontString name="GS_InstanceText8" inherits="GameFontNormal" text="|cFFE9731B(4900)|r   Tier   9.3  (iLevel 258)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-216" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-
-				<FontString name="GS_InstanceText9" inherits="GameFontNormal" text="|cFFDC694B(4700)|r   Tier 10.1  (iLevel 251)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-238" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-				<FontString name="GS_InstanceText10" inherits="GameFontNormal" text="|cFFF16B00(5100)|r   Tier 10.2  (iLevel 264)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-260" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-				<FontString name="GS_InstanceText11" inherits="GameFontNormal" text="|cFFF82F00(5600)|r   Tier 10.3  (iLevel 277)" justifyH="Left">
-					<Size>
-						<AbsDimension x="200" y="20" />
-					</Size>
-					<Anchors>
-						<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrame">
-							<Offset x="40" y="-282" />
-						</Anchor>
-					</Anchors>
-				</FontString>
-
-						</Layer>
-	</Layers>
-</Frame>
-
-			<Button name="$parentTab1" inherits="CharacterFrameTabButtonTemplate" id="1" text="Equipment">
+<Button name="$parentTab1" inherits="CharacterFrameTabButtonTemplate" id="1" text="Профіль">
 				<Anchors>
 					<Anchor point="TOPLEFT">
 						<Offset x="0" y="-444" />
@@ -915,15 +583,14 @@
 						GS_SCANSET(GS_DisplayPlayer)
 						--PanelTemplates_SetTab(GS_DisplayFrame, 1)
 						--GS_DisplayFrame:Hide(); GearScore_DisplayUnit(GS_DisplayPlayer, 1)
-						--GS_ExPFrame:Hide()
 						--if GS_DatabaseFrame.tooltip then GS_DatabaseFrame.tooltip:Show(); else GS_DisplayFrame:Hide(); 						--GearScore_DisplayUnit(GS_DisplayPlayer, 1); end
-						--GS_GearFrame:Show(); GS_NotesFrame:Hide(); GS_DefaultFrame:Show(); GS_ExPFrame:Hide()
+						--GS_GearFrame:Show(); GS_NotesFrame:Hide(); GS_DefaultFrame:Show()
 						--if ( GS_OptionsFrame:IsVisible() ) then GearScore_HideOptions(); end		
 						--GS_GearScoreText:Show(); GS_LocationText:Show(); GS_DateText:Show(); GS_AverageText: Show();
 					</OnClick>
 				</Scripts>
 			</Button>
-			<Button name="$parentTab2" inherits="CharacterFrameTabButtonTemplate" id="2" text="Experience">
+			<Button name="$parentTab2" inherits="CharacterFrameTabButtonTemplate" id="2" text="База">
 				<Anchors>
 					<Anchor point="TOPLEFT" relativeTo="GS_DisplayFrameTab1" relativePoint="TOPRIGHT">
 						<Offset x="-14" y="" />
@@ -931,20 +598,15 @@
 				</Anchors>
 				<Scripts>
 					<OnClick>
-						--local LibQTip = LibStub("LibQTipClick-1.1")
-						--LibQTip:Release(GS_DatabaseFrame.tooltip)
-						--GS_DatabaseFrame.tooltip:Hide()
-						GearScore_HideDatabase()
 						PanelTemplates_SetTab(GS_DisplayFrame, 2)
-						GS_GearFrame:Hide(); GS_ExPFrame:Show();  GS_DefaultFrame:Show()
-						GS_DisplayXP(Name); GearScoreClassScan(Name)
+						GS_GearFrame:Hide(); GS_DefaultFrame:Hide()
 						if ( GS_OptionsFrame:IsVisible() ) then GearScore_HideOptions(); end
-						GS_GearScoreText:Hide(); GS_LocationText:Hide(); GS_DateText:Hide(); GS_AverageText: Hide();
+						GearScore_DisplayDatabase(GS_DisplayedGroup or "Guild", GS_SortedType or "GearScore", 1, GS_StartPage or 0)
 					</OnClick>
 				</Scripts>
 
 			</Button>
-			<Button name="$parentTab3" inherits="CharacterFrameTabButtonTemplate"  id="3" text="Options">
+			<Button name="$parentTab3" inherits="CharacterFrameTabButtonTemplate"  id="3" text="Опції">
 				<Size>
 					<AbsDimension x="75" y="23" />
 				</Size>
@@ -961,7 +623,7 @@
 						GearScore_HideDatabase()
 						GearScore_ShowOptions()
 						PanelTemplates_SetTab(GS_DisplayFrame, 3)
-						GS_GearFrame:Hide(); GS_ExPFrame:Hide(); GS_DefaultFrame:Hide()
+						GS_GearFrame:Hide(); GS_DefaultFrame:Hide()
 					</OnClick>
 				</Scripts>
 			</Button>
@@ -1036,7 +698,7 @@
 				<Size><AbsDimension x="20" y="20" /></Size>
 				<Anchors><Anchor point="TOPLEFT"><Offset x="500" y="-51" /></Anchor></Anchors>
 			</CheckButton>
-			<Button name="Button3" inherits="UIPanelButtonTemplate" text="Defaults">
+			<Button name="Button3" inherits="UIPanelButtonTemplate" text="Типово">
 				<Size>
 					<AbsDimension x="75" y="23" />
 				</Size>
@@ -1053,7 +715,7 @@
 					</Anchor>
 				</Anchors>
 			</Button>
-			<Button name="GS_UndoButton" inherits="UIPanelButtonTemplate" text="Undo">
+			<Button name="GS_UndoButton" inherits="UIPanelButtonTemplate" text="Назад">
 				<Size>
 					<AbsDimension x="75" y="23" />
 				</Size>
@@ -1427,10 +1089,10 @@
 					getglobal(self:GetName().."Low"):SetText("1");
 					self:SetMinMaxValues(1,30);
 					self:SetValueStep(1);
-					getglobal(self:GetName().."Text"):SetText("Keep data for: 30 days.")
+					getglobal(self:GetName().."Text"):SetText("Зберігати дані: 30 дн.")
 				</OnLoad>
 				<OnValueChanged> 
-					getglobal(self:GetName().."Text"):SetText("Keep data for: "..GS_DatabaseAgeSlider:GetValue().." days.")
+					getglobal(self:GetName().."Text"):SetText("Зберігати дані: "..GS_DatabaseAgeSlider:GetValue().." дн.")
 					--if ( GS_Settings ) then GS_Settings["DatabaseAgeSlider"] = GS_DatabaseAgeSlider:GetValue(); end
 				</OnValueChanged>
 				</Scripts>
@@ -1478,7 +1140,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_FontString2" inherits="GameFontNormalLarge" text="Tooltip Options" justifyH="RIGHT">
+				<FontString name="GS_FontString2" inherits="GameFontNormalLarge" text="Опції підказок" justifyH="RIGHT">
 					<Size>
 						<AbsDimension x="158" y="20" />
 					</Size>
@@ -1492,7 +1154,7 @@
 					</FontHeight>
 					<Color r="1" g="1" b="1" />
 				</FontString>
-				<FontString name="GS_FontString4" inherits="GameFontNormal" text="Heavy">
+				<FontString name="GS_FontString4" inherits="GameFontNormal" text="Суворі">
 					<Size>
 						<AbsDimension x="80" y="20" />
 					</Size>
@@ -1502,7 +1164,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_FontString6" inherits="GameFontNormal" text="None">
+				<FontString name="GS_FontString6" inherits="GameFontNormal" text="Немає">
 					<Size>
 						<AbsDimension x="80" y="20" />
 					</Size>
@@ -1512,7 +1174,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_FontString3" inherits="GameFontNormal" text="Show Player Tooltips" justifyH="RIGHT">
+				<FontString name="GS_FontString3" inherits="GameFontNormal" text="Підказки гравців" justifyH="RIGHT">
 					<Size>
 						<AbsDimension x="135" y="20" />
 					</Size>
@@ -1522,7 +1184,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_FontString7" inherits="GameFontNormal" text="Show Item Tooltips" justifyH="RIGHT">
+				<FontString name="GS_FontString7" inherits="GameFontNormal" text="Підказки предметів" justifyH="RIGHT">
 					<Size>
 						<AbsDimension x="148" y="20" />
 					</Size>
@@ -1532,7 +1194,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_FontString8" inherits="GameFontNormal" text="Show Item Levels" justifyH="RIGHT">
+				<FontString name="GS_FontString8" inherits="GameFontNormal" text="Рівень предметів" justifyH="RIGHT">
 					<Size>
 						<AbsDimension x="122" y="20" />
 					</Size>
@@ -1543,29 +1205,29 @@
 					</Anchors>
 				</FontString>
 
-				<FontString name="GS_SpecFontString1" inherits="GameFontNormal" text="Show Restoration SpecScores" id="1" justifyH="RIGHT">/f
+				<FontString name="GS_SpecFontString1" inherits="GameFontNormal" text="SpecScore: Restoration" id="1" justifyH="RIGHT">/f
 					<Anchors><Anchor point="TOPRIGHT" relativepoint="TOPLEFT"><Offset x="486" y="-160" />	</Anchor></Anchors>
 				</FontString>
-				<FontString name="GS_SpecFontString2" inherits="GameFontNormal" text="Show Elemental SpecScores" id="2" justifyH="RIGHT">
+				<FontString name="GS_SpecFontString2" inherits="GameFontNormal" text="SpecScore: Elemental" id="2" justifyH="RIGHT">
 					<Anchors><Anchor point="TOPRIGHT" relativepoint="TOPLEFT"><Offset x="486" y="-180" />	</Anchor></Anchors>
 				</FontString>
-				<FontString name="GS_SpecFontString3" inherits="GameFontNormal" text="Show Enhancement SpecScores" id="3" justifyH="RIGHT">
+				<FontString name="GS_SpecFontString3" inherits="GameFontNormal" text="SpecScore: Enhancement" id="3" justifyH="RIGHT">
 					<Anchors><Anchor point="TOPRIGHT" relativepoint="TOPLEFT"><Offset x="486" y="-200" />	</Anchor></Anchors>
 				</FontString>
-				<FontString name="GS_SpecFontString4" inherits="GameFontNormal" text="Show Tanking SpecScores" id="4" justifyH="RIGHT">
+				<FontString name="GS_SpecFontString4" inherits="GameFontNormal" text="SpecScore: Tanking" id="4" justifyH="RIGHT">
 					<Anchors><Anchor point="TOPRIGHT" relativepoint="TOPLEFT"><Offset x="486" y="-220" />	</Anchor></Anchors>
 				</FontString>
-				<FontString name="GS_FontString189" inherits="GameFontNormal" text="Show Data Age on Tooltip" justifyH="RIGHT">
+				<FontString name="GS_FontString189" inherits="GameFontNormal" text="Вік даних у підказці" justifyH="RIGHT">
 					<Anchors><Anchor point="TOPLEFT"><Offset x="330" y="-234" />	</Anchor></Anchors>
 				</FontString>
-				<FontString name="GS_FontString89" inherits="GameFontNormal" text="Show GearScore Tips/Help" justifyH="RIGHT">
+				<FontString name="GS_FontString89" inherits="GameFontNormal" text="Поради GearScore" justifyH="RIGHT">
 					<Anchors><Anchor point="TOPLEFT"><Offset x="330" y="-260" />	</Anchor></Anchors>
 				</FontString>
 
-				<FontString name="GS_FontString88" inherits="GameFontNormal" text="Show GearScores in Chat" justifyH="RIGHT">
+				<FontString name="GS_FontString88" inherits="GameFontNormal" text="GearScore у чаті" justifyH="RIGHT">
 					<Anchors><Anchor point="TOPLEFT"><Offset x="336" y="-286" />	</Anchor></Anchors>
 				</FontString>
-				<FontString name="GS_FontString5" inherits="GameFontNormal" text="Light">
+				<FontString name="GS_FontString5" inherits="GameFontNormal" text="Легкі">
 					<Size>
 						<AbsDimension x="80" y="20" />
 					</Size>
@@ -1575,7 +1237,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_FontString9" inherits="GameFontNormalLarge" text="Database Options" justifyH="LEFT">
+				<FontString name="GS_FontString9" inherits="GameFontNormalLarge" text="Опції бази" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="159" y="20" />
 					</Size>
@@ -1586,7 +1248,7 @@
 					</Anchors>
 					<Color r="1" g="1" b="1" />
 				</FontString>
-				<FontString name="GS_FontString10" inherits="GameFontNormal" text="Show Detailed Item List" justifyH="RIGHT">
+				<FontString name="GS_FontString10" inherits="GameFontNormal" text="Детальний список речей" justifyH="RIGHT">
 					<Size>
 						<AbsDimension x="163" y="20" />
 					</Size>
@@ -1596,7 +1258,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_FontString12" inherits="GameFontNormal" text="Auto Prune Database" justifyH="LEFT">
+				<FontString name="GS_FontString12" inherits="GameFontNormal" text="Автоочистка бази" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="179" y="20" />
 					</Size>
@@ -1606,7 +1268,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_FontString13" inherits="GameFontNormal" text="Minimum Level" justifyH="LEFT">
+				<FontString name="GS_FontString13" inherits="GameFontNormal" text="Мін. рівень" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="141" y="20" />
 					</Size>
@@ -1616,7 +1278,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_OppFactionText" inherits="GameFontNormal" text="Record Opposite Faction" justifyH="LEFT">
+				<FontString name="GS_OppFactionText" inherits="GameFontNormal" text="Запис іншої фракції" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="264" y="20" />
 					</Size>
@@ -1626,7 +1288,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>				
-				<FontString name="GS_FontString14" inherits="GameFontNormalLarge" text="Masterloot Options" justifyH="RIGHT">
+				<FontString name="GS_FontString14" inherits="GameFontNormalLarge" text="Опції майстер-луту" justifyH="RIGHT">
 					<Size>
 						<AbsDimension x="174" y="20" />
 					</Size>
@@ -1637,7 +1299,7 @@
 					</Anchors>
 					<Color r="1" g="1" b="1" />
 				</FontString>
-				<FontString name="GS_FontString15" inherits="GameFontNormal" text="Show Masterloot Info">
+				<FontString name="GS_FontString15" inherits="GameFontNormal" text="Інфо майстер-луту">
 					<Size>
 						<AbsDimension x="142" y="20" />
 					</Size>
@@ -1647,7 +1309,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GS_FontString16" inherits="GameFontNormal" text="Gear Restriction Level">
+				<FontString name="GS_FontString16" inherits="GameFontNormal" text="Обмеження речей">
 					<Size>
 						<AbsDimension x="147" y="20" />
 					</Size>
@@ -1731,41 +1393,42 @@
 					</OnClick>
 	                </Scripts>
 	            </Button>
-			<Button name="$parentTab1" inherits="CharacterFrameTabButtonTemplate" id="1" text="Group">
+			<Button name="$parentTab1" inherits="CharacterFrameTabButtonTemplate" id="1" text="Група">
 				<Anchors><Anchor point="TOPLEFT"><Offset x="0" y="-464" /></Anchor></Anchors>
 				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("Party", SortType); PanelTemplates_SetTab(GS_DatabaseFrame, 1)</OnClick></Scripts>
 			</Button>
-			<Button name="$parentTab2" inherits="CharacterFrameTabButtonTemplate" id="2" text="Guild">
+			<Button name="$parentTab2" inherits="CharacterFrameTabButtonTemplate" id="2" text="Гільдія">
 				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_DatabaseFrameTab1" relativePoint="TOPRIGHT"><Offset x="-14" y="" /></Anchor></Anchors>
 				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("Guild", SortType); PanelTemplates_SetTab(GS_DatabaseFrame, 2)</OnClick></Scripts>
 			</Button>
-			<Button name="$parentTab3" inherits="CharacterFrameTabButtonTemplate" id="3" text="Friends">
+			<Button name="$parentTab3" inherits="CharacterFrameTabButtonTemplate" id="3" text="Друзі">
 				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_DatabaseFrameTab2" relativePoint="TOPRIGHT"><Offset x="-14" y="" /></Anchor></Anchors>
 				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("Friends", SortType); PanelTemplates_SetTab(GS_DatabaseFrame, 3)</OnClick></Scripts>
 			</Button>
-			<Button name="$parentTab4" inherits="CharacterFrameTabButtonTemplate" id="4" text="All">
+			<Button name="$parentTab4" inherits="CharacterFrameTabButtonTemplate" id="4" text="Усі">
 				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_DatabaseFrameTab3" relativePoint="TOPRIGHT"><Offset x="-14" y="" /></Anchor></Anchors>
 				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("All", SortType); PanelTemplates_SetTab(GS_DatabaseFrame, 4)</OnClick></Scripts>
 			</Button>
 
 		
- 			<Button name="GS_PreviousButton" inherits="UIPanelButtonTemplate" text="Prev">
+ 			<Button name="GS_PreviousButton" inherits="UIPanelButtonTemplate" text="Назад">
 				<Size><AbsDimension x="42" y="23" /></Size>
 				<Anchors><Anchor point="BOTTOMLEFT"><Offset x="345" y="15" /></Anchor></Anchors>
 				<Scripts><OnClick>--GearScore_HideDatabase(); 
 				GearScore_DisplayDatabase(GS_DisplayedGroup, GS_SortedType, 1, (GS_StartPage - 25))</OnClick></Scripts>
 			</Button>		
-			 			<Button name="GS_NextButton" inherits="UIPanelButtonTemplate" text="Next">
+			 			<Button name="GS_NextButton" inherits="UIPanelButtonTemplate" text="Далі">
 				<Size><AbsDimension x="42" y="23" /></Size>
 				<Anchors><Anchor point="BOTTOMLEFT"><Offset x="390" y="15" /></Anchor></Anchors>
 				<Scripts><OnClick>--GearScore_HideDatabase(); 
 				GearScore_DisplayDatabase(GS_DisplayedGroup, GS_SortedType, 1, (GS_StartPage + 25))</OnClick></Scripts>
 			</Button>			
-			<Button name="GS_BackProfileButton" inherits="UIPanelButtonTemplate" text="Profiles">
+			<Button name="GS_BackProfileButton" inherits="UIPanelButtonTemplate" text="Профіль">
 				<Size><AbsDimension x="75" y="23" /></Size>
 				<Anchors><Anchor point="BOTTOMRIGHT"><Offset x="-15" y="15" /></Anchor></Anchors>
-				<Scripts><OnClick>--GearScore_HideDatabase(); 
-				GearScore_DisplayUnit(GS_DisplayPlayer, 1)</OnClick></Scripts>
+				<Scripts><OnClick>
+				GearScore_OpenProfile(GS_DisplayPlayer or UnitName("player"), 1)
+				</OnClick></Scripts>
 			</Button>
 			
 
@@ -1775,16 +1438,16 @@
 				<Scripts>
 					<OnEscapePressed>self:ClearFocus()</OnEscapePressed>
 					<OnEnterPressed>
-					GearScore_HideDatabase(); GearScore_DisplayDatabase("Search")</OnEnterPressed>
+					GearScore_RunDatabaseSearch()</OnEnterPressed>
 					<OnLoad>self:SetAutoFocus(0); </OnLoad>
 				</Scripts>
 			</EditBox>	
- 			<Button name="GS_Search2Button" inherits="UIPanelButtonTemplate" text="Search">
+ 			<Button name="GS_Search2Button" inherits="UIPanelButtonTemplate" text="Пошук">
 				<Size><AbsDimension x="75" y="23" /></Size>
 				<Anchors><Anchor point="BOTTOMRIGHT"><Offset x="-175" y="15" /></Anchor></Anchors>
-				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("Search", "GearScore")</OnClick></Scripts>
+				<Scripts><OnClick>GearScore_RunDatabaseSearch("GearScore")</OnClick></Scripts>
 			</Button>							
- 			<Button name="GS_Search2Button" inherits="UIPanelButtonTemplate" text="Report">
+ 			<Button name="GS_Search2Button" inherits="UIPanelButtonTemplate" text="Звіт">
 				<Size><AbsDimension x="75" y="23" /></Size>
 				<Anchors><Anchor point="BOTTOMRIGHT"><Offset x="-95" y="15" /></Anchor></Anchors>
 				<Scripts><OnClick>GearScore_ShowReport()</OnClick></Scripts>
@@ -1834,7 +1497,7 @@
 					self:SetValueStep(1);
 				</OnLoad>
 				<OnValueChanged> 
-					getglobal(self:GetName().."Text"):SetText("Top: "..GS_Slider:GetValue())
+					getglobal(self:GetName().."Text"):SetText("Топ: "..GS_Slider:GetValue())
 					if ( GS_Settings ) then GS_Settings["Slider"] = GS_Slider:GetValue(); end
 				</OnValueChanged>
 				</Scripts>
@@ -1877,7 +1540,7 @@
 				</Anchors>
 			</EditBox>
 
-			<Button name="GSXButton1" inherits="UIPanelButtonTemplate" text="Spam">
+			<Button name="GSXButton1" inherits="UIPanelButtonTemplate" text="Надіслати">
 				<Scripts>
 					<OnClick>
 						GearScore_SendReport()
@@ -2073,7 +1736,7 @@
 		</Frames>
 		<Layers>
 			<Layer level="OVERLAY">
-				<FontString name="GSXFontString1" inherits="GameFontNormalLarge" text="Report To:" justifyH="LEFT">
+				<FontString name="GSXFontString1" inherits="GameFontNormalLarge" text="Звіт у:" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="102" y="20" />
 					</Size>
@@ -2083,7 +1746,7 @@
 						</Anchor>
 					</Anchors>
 				</FontString>
-				<FontString name="GSXFontString2" inherits="GameFontNormal" text="Say" justifyH="LEFT">
+				<FontString name="GSXFontString2" inherits="GameFontNormal" text="Сказати" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="80" y="20" />
 					</Size>
@@ -2094,7 +1757,7 @@
 					</Anchors>
 					<Color r="1" g="1" b="1" />
 				</FontString>
-				<FontString name="GSXFontString3" inherits="GameFontNormal" text="Party" justifyH="LEFT">
+				<FontString name="GSXFontString3" inherits="GameFontNormal" text="Група" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="80" y="20" />
 					</Size>
@@ -2105,7 +1768,7 @@
 					</Anchors>
 					<Color r="1" g="1" b="1" />
 				</FontString>
-				<FontString name="GSXFontString4" inherits="GameFontNormal" text="Raid" justifyH="LEFT">
+				<FontString name="GSXFontString4" inherits="GameFontNormal" text="Рейд" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="80" y="20" />
 					</Size>
@@ -2116,7 +1779,7 @@
 					</Anchors>
 					<Color r="1" g="1" b="1" />
 				</FontString>
-				<FontString name="GSXFontString5" inherits="GameFontNormal" text="Guild" justifyH="LEFT">
+				<FontString name="GSXFontString5" inherits="GameFontNormal" text="Гільдія" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="80" y="20" />
 					</Size>
@@ -2127,7 +1790,7 @@
 					</Anchors>
 					<Color r="1" g="1" b="1" />
 				</FontString>
-				<FontString name="GSXFontString6" inherits="GameFontNormal" text="Officer" justifyH="LEFT">
+				<FontString name="GSXFontString6" inherits="GameFontNormal" text="Офіцер" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="80" y="20" />
 					</Size>
@@ -2138,7 +1801,7 @@
 					</Anchors>
 					<Color r="1" g="1" b="1" />
 				</FontString>
-				<FontString name="GSXFontString7" inherits="GameFontNormal" text="Whisper Target" justifyH="LEFT">
+				<FontString name="GSXFontString7" inherits="GameFontNormal" text="Цілі пошепки" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="105" y="20" />
 					</Size>
@@ -2149,7 +1812,7 @@
 					</Anchors>
 					<Color r="1" g="1" b="1" />
 				</FontString>
-				<FontString name="FontString8" inherits="GameFontNormal" text="Whisper:" justifyH="LEFT">
+				<FontString name="FontString8" inherits="GameFontNormal" text="Пошепки:" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="80" y="20" />
 					</Size>
@@ -2160,7 +1823,7 @@
 					</Anchors>
 					<Color r="1" g="1" b="1" />
 				</FontString>
-				<FontString name="GSXFontString9" inherits="GameFontNormal" text="Channel #:" justifyH="LEFT">
+				<FontString name="GSXFontString9" inherits="GameFontNormal" text="Канал #:" justifyH="LEFT">
 					<Size>
 						<AbsDimension x="80" y="20" />
 					</Size>
@@ -2179,7 +1842,7 @@
 </Frames>
 		<Layers>
 			<Layer level="OVERLAY">
-				<FontString name="GSDatabaseInfoString" inherits="GameFontNormal" text="Database: Unknown. (Appox. ??kb)" justifyH="LEFT">
+				<FontString name="GSDatabaseInfoString" inherits="GameFontNormal" text="База: невідомо. (прибл. ?? КБ)" justifyH="LEFT">
 				<Anchors><Anchor point="TOPLEFT"><Offset x="30" y="-434" /></Anchor></Anchors>
 				</FontString>
 			</Layer>

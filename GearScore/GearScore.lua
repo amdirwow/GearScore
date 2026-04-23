@@ -66,12 +66,6 @@ function GearScore_OnEvent(GS_Nil, GS_EventName, GS_Prefix, GS_AddonMessage, GS_
 
 	end
 
-    if ( GS_EventName == "INSPECT_ACHIEVEMENT_READY" ) then
-     	GearScoreCalculateEXP()
-     	if ( GS_DisplayFrame:IsVisible() ) then GS_DisplayXP(UnitName("target")); --GearScoreClassScan(UnitName("target"));
-     	 end
-    end
-
 	if ( GS_EventName == "PLAYER_EQUIPMENT_CHANGED" ) then
 		
 	    if ( GS_PlayerIsSwitchingGear == true ) then GS_PlayerSwappedGear = GS_PlayerSwappedGear + 1 return; end
@@ -94,7 +88,6 @@ function GearScore_OnEvent(GS_Nil, GS_EventName, GS_Prefix, GS_AddonMessage, GS_
 				--ClearAchievementComparisonUnit(); SetAchievementComparisonUnit("target")				
 				--GearScore_DisplayUnit(UnitName("target"), 1); 
 				
-				GS_ExPFrameUpdateCounter = 0;
 				GS_SCANSET(UnitName("target"));
 			end			
 		end
@@ -201,8 +194,9 @@ function GearScore_CheckPartyGuild(Name)
 	local Group = "party"
 	if UnitName("raid1") then Group = "raid"; else Group = "party"; end
 	for i = 1, 40 do
-		if ( UnitName(Group..i) == Name ) then return true; else return false; end
+		if ( UnitName(Group..i) == Name ) then return true; end
 	end
+	return false
 end
 
 function GearScore_ComposeRecord(tbl, GS_Sender)
@@ -213,7 +207,8 @@ function GearScore_ComposeRecord(tbl, GS_Sender)
 	for i = 12, 30 do
 		if ( i ~= 15 ) then Equip[i-11] = tbl[i]; end
 	end	
-	if ( GS_Data[GetRealmName()].Players[Name] ) then if ( GS_Data[GetRealmName()].Players[Name].StatString ) then local StatString = GS_Data[GetRealmName()].Players[Name].StatString; end end
+	local StatString = nil
+	if ( GS_Data[GetRealmName()].Players[Name] ) then StatString = GS_Data[GetRealmName()].Players[Name].StatString; end
 	GS_Data[GetRealmName()].Players[Name] = { ["Name"] = Name, ["GearScore"] = GearScore, ["PVP"] = 1, ["Level"] = tonumber(Level), ["Faction"] = Faction, ["Sex"] = Sex, ["Guild"] = Guild,
     ["Race"] = Race, ["Class"] =  Class, ["Spec"] = 1, ["Location"] = Location, ["Scanned"] = Scanned, ["Date"] = Date, ["Average"] = Average, ["Equip"] = Equip, ["StatString"] = StatString}
 end
@@ -250,6 +245,9 @@ GS_ServerItemReplyPrefix = "GSTMOGR"
 GS_ServerCacheTTL = 15
 GS_ServerBridgeVersion = 3
 GS_TransmogSetDebug = GS_TransmogSetDebug or nil
+GS_TransmogSetVerboseDebug = GS_TransmogSetVerboseDebug or nil
+GS_DefaultArmorSetTooltipSlots = { 10, 1, 7, 3, 5 }
+GS_SetRefreshThrottle = GS_SetRefreshThrottle or {}
 GS_ServerStatColumns = {
 	{
 		{ Key = "strength", Label = "Сила" },
@@ -265,6 +263,13 @@ function GearScore_TransmogSetDebug(Message)
 	if not GS_TransmogSetDebug then return; end
 	if DEFAULT_CHAT_FRAME then
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffd100GSTSet:|r "..tostring(Message))
+	end
+end
+
+function GearScore_TransmogSetVerbose(Message)
+	if not GS_TransmogSetDebug or not GS_TransmogSetVerboseDebug then return; end
+	if DEFAULT_CHAT_FRAME then
+		DEFAULT_CHAT_FRAME:AddMessage("|cff80dfffGSTSetV:|r "..tostring(Message))
 	end
 end
 
@@ -377,7 +382,27 @@ function GearScore_ForceRefreshSelfServerSets()
 	if not GS_ServerRequestThrottle then GS_ServerRequestThrottle = {}; end
 	GS_ServerRequestThrottle[Name] = nil
 	GS_SelfSetRefreshAt = nil
+	if GS_SetRefreshThrottle then
+		for Key, _ in pairs(GS_SetRefreshThrottle) do
+			if string.find(Key, Name..":", 1, true) == 1 then GS_SetRefreshThrottle[Key] = nil; end
+		end
+	end
 	GearScore_TransmogSetDebug("manual self server set refresh")
+	GearScore_RequestServerItemData(Name, 1)
+end
+
+function GearScore_ForceRefreshUnitServerSets(UnitToken)
+	if not UnitToken or not UnitExists(UnitToken) or not UnitIsPlayer(UnitToken) then return; end
+	local Name = UnitName(UnitToken)
+	if not Name then return; end
+	if not GS_ServerRequestThrottle then GS_ServerRequestThrottle = {}; end
+	GS_ServerRequestThrottle[Name] = nil
+	if GS_SetRefreshThrottle then
+		for Key, _ in pairs(GS_SetRefreshThrottle) do
+			if string.find(Key, Name..":", 1, true) == 1 then GS_SetRefreshThrottle[Key] = nil; end
+		end
+	end
+	GearScore_TransmogSetDebug("manual "..tostring(UnitToken).." server set refresh")
 	GearScore_RequestServerItemData(Name, 1)
 end
 
@@ -660,11 +685,12 @@ function GearScore_GetCurrentVisibleSetRows(Tooltip, SetData)
 	return CurrentRows
 end
 
-function GearScore_GetRealEquippedSetPieces(Record, SetData, CurrentSignature)
+function GearScore_GetRealEquippedSetPieces(Record, SetData, CurrentSignature, CurrentSetId)
 	local Equipped = {}
 	local EquippedNorm = {}
 	local EquippedRows = {}
 	local EquippedDisplayNames = {}
+	local EquippedSlots = {}
 	local Count = 0
 	if not Record or not Record.Equip or not SetData or not SetData.Name then return Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, Count; end
 	GearScore_TransmogSetDebug("match begin set='"..tostring(SetData.Name).."' currentSig="..GearScore_ShortSignature(CurrentSignature))
@@ -674,43 +700,51 @@ function GearScore_GetRealEquippedSetPieces(Record, SetData, CurrentSignature)
 		local EquippedSetData = GearScore_GetItemSetDataFromCode(ItemCode)
 		local ServerRow = Record.Sets and Record.Sets.BySlot and Record.Sets.BySlot[Slot]
 		local SameServerSignature = CurrentSignature and ServerRow and ServerRow.Signature and ServerRow.Signature == CurrentSignature
+		local SameServerSetId = CurrentSetId and ServerRow and ServerRow.SetId == CurrentSetId
 		if ServerRow then
-			GearScore_TransmogSetDebug("slot "..tostring(Slot).." setId="..tostring(ServerRow.SetId).." sig="..GearScore_ShortSignature(ServerRow.Signature).." sameSig="..tostring(SameServerSignature).." row='"..tostring(ServerRow.RowName).."'")
+			GearScore_TransmogSetDebug("slot "..tostring(Slot).." setId="..tostring(ServerRow.SetId).." sameSet="..tostring(SameServerSetId).." sig="..GearScore_ShortSignature(ServerRow.Signature).." sameSig="..tostring(SameServerSignature).." row='"..tostring(ServerRow.RowName).."'")
 		end
-		if EquippedSetData and (EquippedSetData.Name == SetData.Name or SameServerSignature) then
-			local ItemName = GearScore_GetTooltipItemNameFromCode(ItemCode) or GearScore_GetItemNameFromCode(ItemCode)
-			local HighlightedRows = GearScore_GetHighlightedSetRowsFromCode(ItemCode, SetData.Name)
-			for RowName, _ in pairs(HighlightedRows) do
-				EquippedRows[RowName] = 1
+		if SameServerSetId or SameServerSignature or (EquippedSetData and EquippedSetData.Name == SetData.Name) then
+			EquippedRows["__slot:"..tostring(Slot)] = 1
+			if (SameServerSetId or SameServerSignature) and ServerRow then
+				if ServerRow.RowName then
+					EquippedRows[ServerRow.RowName] = 1
+					EquippedDisplayNames[ServerRow.RowName] = ServerRow.FullName or ServerRow.RowName
+					local NormRow = GearScore_NormalizeSetItemName(ServerRow.RowName)
+					if NormRow then
+						EquippedRows[NormRow] = 1
+						EquippedDisplayNames[NormRow] = ServerRow.FullName or ServerRow.RowName
+					end
+				end
+				if ServerRow.FullName then
+					Equipped[ServerRow.FullName] = 1
+					local NormFullName = GearScore_NormalizeSetItemName(ServerRow.FullName)
+					if NormFullName then EquippedNorm[NormFullName] = 1; end
+				end
 			end
-			if ItemName and not Equipped[ItemName] then
-				Equipped[ItemName] = 1
-				local NormName = GearScore_NormalizeSetItemName(ItemName)
-				if NormName then EquippedNorm[NormName] = 1; end
-				local MatchedRows = GearScore_GetSetRowsForItemName(SetData, ItemName)
-				for RowName, _ in pairs(MatchedRows) do
+			local ItemName = ServerRow and ServerRow.FullName
+			if not SameServerSetId and not SameServerSignature then
+				ItemName = GearScore_GetTooltipItemNameFromCode(ItemCode) or GearScore_GetItemNameFromCode(ItemCode)
+				local HighlightedRows = GearScore_GetHighlightedSetRowsFromCode(ItemCode, SetData.Name)
+				for RowName, _ in pairs(HighlightedRows) do
 					EquippedRows[RowName] = 1
-					EquippedDisplayNames[RowName] = ItemName
 				end
-				if SameServerSignature and ServerRow then
-					if ServerRow.RowName then
-						EquippedRows[ServerRow.RowName] = 1
-						EquippedDisplayNames[ServerRow.RowName] = ServerRow.FullName or ItemName
-						local NormRow = GearScore_NormalizeSetItemName(ServerRow.RowName)
-						if NormRow then
-							EquippedRows[NormRow] = 1
-							EquippedDisplayNames[NormRow] = ServerRow.FullName or ItemName
-						end
-					end
-					if ServerRow.FullName then
-						Equipped[ServerRow.FullName] = 1
-						local NormFullName = GearScore_NormalizeSetItemName(ServerRow.FullName)
-						if NormFullName then EquippedNorm[NormFullName] = 1; end
+				if ItemName and not Equipped[ItemName] then
+					Equipped[ItemName] = 1
+					local NormName = GearScore_NormalizeSetItemName(ItemName)
+					if NormName then EquippedNorm[NormName] = 1; end
+					local MatchedRows = GearScore_GetSetRowsForItemName(SetData, ItemName)
+					for RowName, _ in pairs(MatchedRows) do
+						EquippedRows[RowName] = 1
+						EquippedDisplayNames[RowName] = ItemName
 					end
 				end
-				Count = Count + 1
-				GearScore_TransmogSetDebug("matched equipped set piece slot "..tostring(Slot).." "..tostring(ItemName).." byName="..tostring(EquippedSetData and EquippedSetData.Name == SetData.Name).." bySig="..tostring(SameServerSignature))
 			end
+			if not EquippedSlots[Slot] then
+				EquippedSlots[Slot] = 1
+				Count = Count + 1
+			end
+			GearScore_TransmogSetDebug("matched equipped set piece slot "..tostring(Slot).." "..tostring(ItemName or (ServerRow and ServerRow.FullName) or "server-row").." byName="..tostring(EquippedSetData and EquippedSetData.Name == SetData.Name).." bySet="..tostring(SameServerSetId).." bySig="..tostring(SameServerSignature))
 		elseif ServerRow then
 			GearScore_TransmogSetDebug("slot "..tostring(Slot).." not matched; clientSet='"..tostring(EquippedSetData and EquippedSetData.Name or "nil").."'")
 		end
@@ -719,44 +753,45 @@ function GearScore_GetRealEquippedSetPieces(Record, SetData, CurrentSignature)
 	return Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, Count
 end
 
-function GearScore_AddVisibleSetRowsByItemInfo(SetData, Record, EquippedRows, EquippedDisplayNames)
-	if not SetData or not SetData.Items or not Record or not Record.Equip or not EquippedRows then return; end
+function GearScore_AddVisibleSetRowsByServerSignature(SetData, Record, Signature, ServerSet, EquippedRows, EquippedDisplayNames)
+	if not Record or not Record.Sets or not Signature or not EquippedRows then return; end
+	if not Record.Sets.BySignature or not Record.Sets.BySignature[Signature] then
+		GearScore_TransmogSetDebug("no BySignature map for sig="..GearScore_ShortSignature(Signature))
+		return
+	end
 
-	for _, RowText in ipairs(SetData.Items) do
-		local ItemName, _, _, _, _, _, _, _, ItemEquipLoc = GetItemInfo(RowText)
-		local Slot = ItemEquipLoc and GS_ItemTypes and GS_ItemTypes[ItemEquipLoc] and GS_ItemTypes[ItemEquipLoc].ItemSlot
-		if Slot == 36 then Slot = 16; end
-
-		if Slot and Record.Equip[Slot] and Record.Equip[Slot] ~= "0:0" then
-			local EquippedSetData = GearScore_GetItemSetDataFromCode(Record.Equip[Slot])
-			if EquippedSetData and EquippedSetData.Name == SetData.Name then
-				EquippedRows[RowText] = 1
-				if EquippedDisplayNames then
-					EquippedDisplayNames[RowText] = GearScore_GetTooltipItemNameFromCode(Record.Equip[Slot]) or GearScore_GetItemNameFromCode(Record.Equip[Slot]) or ItemName or RowText
-				end
-				local NormRow = GearScore_NormalizeSetItemName(RowText)
-				if NormRow then
-					EquippedRows[NormRow] = 1
-					if EquippedDisplayNames then
-						EquippedDisplayNames[NormRow] = EquippedDisplayNames[RowText]
-					end
-				end
-				GearScore_TransmogSetDebug("iteminfo row match row='"..tostring(RowText).."' slot="..tostring(Slot).." loc="..tostring(ItemEquipLoc))
-			else
-				GearScore_TransmogSetDebug("iteminfo row slot mismatch row='"..tostring(RowText).."' slot="..tostring(Slot).." set='"..tostring(EquippedSetData and EquippedSetData.Name or "nil").."'")
+	local SlotCount = 0
+	for Slot, EquippedServerRow in pairs(Record.Sets.BySignature[Signature]) do
+		SlotCount = SlotCount + 1
+		EquippedRows["__slot:"..tostring(Slot)] = 1
+		local RowText = EquippedServerRow and EquippedServerRow.RowName
+		if RowText then
+			EquippedRows[RowText] = 1
+			if EquippedDisplayNames then
+				EquippedDisplayNames[RowText] = EquippedServerRow.FullName or RowText
 			end
+			local NormRow = GearScore_NormalizeSetItemName(RowText)
+			if NormRow then
+				EquippedRows[NormRow] = 1
+				if EquippedDisplayNames then
+					EquippedDisplayNames[NormRow] = EquippedServerRow.FullName or RowText
+				end
+			end
+			GearScore_TransmogSetDebug("signature server row match slot="..tostring(Slot).." row='"..tostring(RowText).."' equipped='"..tostring(EquippedServerRow.FullName).."'")
 		else
-			GearScore_TransmogSetDebug("iteminfo row miss row='"..tostring(RowText).."' loc="..tostring(ItemEquipLoc).." slot="..tostring(Slot))
+			GearScore_TransmogSetDebug("signature slot row miss slot="..tostring(Slot).." equipped='"..tostring(EquippedServerRow and EquippedServerRow.FullName).."'")
 		end
 	end
+	GearScore_TransmogSetDebug("signature equipped slot count "..tostring(SlotCount).." sig="..GearScore_ShortSignature(Signature))
 end
 
-function GearScore_PatchVisibleSetTooltip(Tooltip, SetData, Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, CurrentRows, ServerSet, CurrentServerRow, EquippedCount)
+function GearScore_PatchVisibleSetTooltip(Tooltip, SetData, Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, CurrentRows, ServerSet, CurrentServerRow, EquippedCount, CurrentSlot)
 	if not Tooltip or not SetData or not Equipped then return nil; end
 	local Patched = nil
 	local Highlighted = 0
 	local EquippedColor = GearScore_GetVisibleSetItemColor(Tooltip, SetData) or { Red = 1, Green = 0.82, Blue = 0 }
 	local InSetItems = nil
+	local VisibleSetRowIndex = 0
 	local TitleLeft = GearScore_GetTooltipFrame(Tooltip:GetName().."TextLeft1")
 	local TitleText = TitleLeft and TitleLeft:GetText()
 	local TitleClean = GearScore_CleanTooltipText(TitleText)
@@ -776,20 +811,40 @@ function GearScore_PatchVisibleSetTooltip(Tooltip, SetData, Equipped, EquippedNo
 				Left:SetText(SetData.Name.." ("..EquippedCount.."/"..SetData.Total..")")
 				Left:SetTextColor(1, 0.82, 0)
 				InSetItems = 1
+				VisibleSetRowIndex = 0
 				Patched = 1
 			elseif InSetItems then
 				if string.find(Text, "^%(") or string.find(Text, ":") or string.find(Text, "^%d") then
 					InSetItems = nil
 				else
+					VisibleSetRowIndex = VisibleSetRowIndex + 1
 					local NormText = GearScore_NormalizeSetItemName(Text)
 					local ServerRow = GearScore_FindServerSetRow(ServerSet, Text)
+					if not ServerRow and ServerSet and ServerSet.Members then
+						if ServerSet.Members.OrderedSlots then
+							ServerRow = ServerSet.Members.OrderedSlots[VisibleSetRowIndex]
+						elseif ServerSet.Members.Ordered then
+							ServerRow = ServerSet.Members.Ordered[VisibleSetRowIndex]
+						end
+					end
+					if not ServerRow and SetData.Total == 5 and GS_DefaultArmorSetTooltipSlots[VisibleSetRowIndex] then
+						ServerRow = { Slot = GS_DefaultArmorSetTooltipSlots[VisibleSetRowIndex], RowName = Text }
+					end
+					GearScore_TransmogSetVerbose("row#"..tostring(VisibleSetRowIndex).." text='"..tostring(Text).."' mappedSlot="..tostring(ServerRow and ServerRow.Slot).." mappedRow='"..tostring(ServerRow and ServerRow.RowName).."'")
 					local RowStyle = EquippedRows and (EquippedRows[Text] or (NormText and EquippedRows[NormText]))
-					local IsSetRow = SetData.ItemMap[Text] or ServerRow or RowStyle or GearScore_SetRowMatchesEquipped(NormText, EquippedNorm)
+					local UseServerRows = CurrentServerRow and CurrentServerRow.Signature
+					local IsSetRow = SetData.ItemMap[Text] or ServerRow or RowStyle
+					if not IsSetRow and not UseServerRows then
+						IsSetRow = GearScore_SetRowMatchesEquipped(NormText, EquippedNorm)
+					end
 					GearScore_TransmogSetDebug("tooltip row '"..tostring(Text).."' isSet="..tostring(IsSetRow).." rowStyle="..tostring(RowStyle).." serverSlot="..tostring(ServerRow and ServerRow.Slot))
 					if IsSetRow then
 						local FullName = (ServerRow and ServerRow.FullName) or (EquippedDisplayNames and (EquippedDisplayNames[Text] or (NormText and EquippedDisplayNames[NormText])))
 						local NormFullName = GearScore_NormalizeSetItemName(FullName)
 						local IsCurrent = (CurrentServerRow and ServerRow and CurrentServerRow.Slot == ServerRow.Slot)
+						if not IsCurrent and CurrentSlot and ServerRow and ServerRow.Slot then
+							IsCurrent = CurrentSlot == ServerRow.Slot
+						end
 						if not IsCurrent and NormTitle then
 							IsCurrent = (NormText and (string.find(NormTitle, NormText, 1, true) or string.find(NormText, NormTitle, 1, true))) or (NormFullName and (NormFullName == NormTitle or string.find(NormTitle, NormFullName, 1, true) or string.find(NormFullName, NormTitle, 1, true)))
 						end
@@ -797,7 +852,13 @@ function GearScore_PatchVisibleSetTooltip(Tooltip, SetData, Equipped, EquippedNo
 							IsCurrent = CurrentRows and (CurrentRows[Text] or (NormText and CurrentRows[NormText]))
 						end
 						Left:SetText("  "..Text)
-						if Equipped[Text] or GearScore_SetRowMatchesEquipped(NormText, EquippedNorm) or RowStyle or ServerRow then
+						local IsEquippedServerSlot = ServerRow and ServerRow.Slot and EquippedRows and EquippedRows["__slot:"..tostring(ServerRow.Slot)]
+						local IsEquippedRow = Equipped[Text] or RowStyle or IsEquippedServerSlot
+						if not IsEquippedRow and not UseServerRows then
+							IsEquippedRow = GearScore_SetRowMatchesEquipped(NormText, EquippedNorm)
+						end
+						GearScore_TransmogSetVerbose("row#"..tostring(VisibleSetRowIndex).." equipped="..tostring(IsEquippedRow).." slotFlag="..tostring(IsEquippedServerSlot).." rowStyle="..tostring(RowStyle).." current="..tostring(IsCurrent))
+						if IsEquippedRow then
 							GearScore_TransmogSetDebug("highlight row '"..tostring(Text).."' current="..tostring(IsCurrent).." full='"..tostring(FullName).."'")
 							if IsCurrent then
 								Left:SetTextColor(1, 0.45, 0)
@@ -1066,35 +1127,66 @@ function GearScore_FixRecordItemTooltip(Tooltip, Record, Slot, Name)
 		return
 	end
 
-	local CurrentItemName = GearScore_GetTooltipItemNameFromCode(RealItemCode) or GearScore_GetItemNameFromCode(RealItemCode)
-	local CurrentRows = GearScore_GetSetRowsForItemName(SetData, CurrentItemName)
 	local CurrentServerRow = Record.Sets and Record.Sets.BySlot and Record.Sets.BySlot[Slot]
 	local ServerSet = CurrentServerRow and Record.Sets and Record.Sets[CurrentServerRow.SetId]
+	local CurrentItemName = CurrentServerRow and CurrentServerRow.FullName
+	local CurrentRows = {}
+	if CurrentServerRow and CurrentServerRow.RowName then
+		CurrentRows[CurrentServerRow.RowName] = 1
+		local NormCurrentRow = GearScore_NormalizeSetItemName(CurrentServerRow.RowName)
+		if NormCurrentRow then CurrentRows[NormCurrentRow] = 1; end
+	end
+	if not CurrentServerRow then
+		CurrentItemName = GearScore_GetTooltipItemNameFromCode(RealItemCode) or GearScore_GetItemNameFromCode(RealItemCode)
+		CurrentRows = GearScore_GetSetRowsForItemName(SetData, CurrentItemName)
+	end
 	GearScore_TransmogSetDebug("fix tooltip name="..tostring(Name).." slot="..tostring(Slot).." set='"..tostring(SetData.Name).."' currentItem='"..tostring(CurrentItemName).."' serverSetId="..tostring(CurrentServerRow and CurrentServerRow.SetId).." sig="..GearScore_ShortSignature(CurrentServerRow and CurrentServerRow.Signature))
-	local Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, EquippedCount = GearScore_GetRealEquippedSetPieces(Record, SetData, CurrentServerRow and CurrentServerRow.Signature)
+	local Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, EquippedCount = GearScore_GetRealEquippedSetPieces(Record, SetData, CurrentServerRow and CurrentServerRow.Signature, CurrentServerRow and CurrentServerRow.SetId)
 	if ServerSet and ServerSet.Members and CurrentServerRow and CurrentServerRow.Signature and Record.Sets and Record.Sets.BySignature and Record.Sets.BySignature[CurrentServerRow.Signature] then
 		GearScore_TransmogSetDebug("member cross-match available setId="..tostring(CurrentServerRow.SetId))
+		local OrderedSlotsCount = ServerSet.Members.OrderedSlots and table.getn(ServerSet.Members.OrderedSlots) or 0
+		local OrderedCount = ServerSet.Members.Ordered and table.getn(ServerSet.Members.Ordered) or 0
+		GearScore_TransmogSetDebug("member rows orderedSlots="..tostring(OrderedSlotsCount).." ordered="..tostring(OrderedCount))
 		for _, Member in pairs(ServerSet.Members.BySlot) do
 			local EquippedServerRow = Record.Sets.BySignature[CurrentServerRow.Signature][Member.Slot]
 			if EquippedServerRow then
 				GearScore_TransmogSetDebug("member row match visible='"..tostring(Member.RowName).."' slot="..tostring(Member.Slot).." equipped='"..tostring(EquippedServerRow.FullName).."'")
-				EquippedRows[Member.RowName] = 1
-				EquippedDisplayNames[Member.RowName] = EquippedServerRow.FullName
-				local NormMember = GearScore_NormalizeSetItemName(Member.RowName)
-				if NormMember then
-					EquippedRows[NormMember] = 1
-					EquippedDisplayNames[NormMember] = EquippedServerRow.FullName
+				if Member.RowName then
+					EquippedRows[Member.RowName] = 1
+					EquippedDisplayNames[Member.RowName] = EquippedServerRow.FullName
+					local NormMember = GearScore_NormalizeSetItemName(Member.RowName)
+					if NormMember then
+						EquippedRows[NormMember] = 1
+						EquippedDisplayNames[NormMember] = EquippedServerRow.FullName
+					end
+				end
+			end
+		end
+	elseif ServerSet and ServerSet.Members and CurrentServerRow and Record.Sets and Record.Sets.BySlot then
+		GearScore_TransmogSetDebug("member setId cross-match available setId="..tostring(CurrentServerRow.SetId))
+		for _, Member in pairs(ServerSet.Members.BySlot) do
+			local EquippedServerRow = Record.Sets.BySlot[Member.Slot]
+			if EquippedServerRow and EquippedServerRow.SetId == CurrentServerRow.SetId then
+				GearScore_TransmogSetDebug("member setId row match visible='"..tostring(Member.RowName).."' slot="..tostring(Member.Slot).." equipped='"..tostring(EquippedServerRow.FullName).."'")
+				if Member.RowName then
+					EquippedRows[Member.RowName] = 1
+					EquippedDisplayNames[Member.RowName] = EquippedServerRow.FullName
+					local NormMember = GearScore_NormalizeSetItemName(Member.RowName)
+					if NormMember then
+						EquippedRows[NormMember] = 1
+						EquippedDisplayNames[NormMember] = EquippedServerRow.FullName
+					end
 				end
 			end
 		end
 	else
 		GearScore_TransmogSetDebug("member cross-match missing serverSet="..tostring(ServerSet ~= nil).." members="..tostring(ServerSet and ServerSet.Members ~= nil).." sigMap="..tostring(Record.Sets and CurrentServerRow and CurrentServerRow.Signature and Record.Sets.BySignature and Record.Sets.BySignature[CurrentServerRow.Signature] ~= nil))
 	end
-	GearScore_AddVisibleSetRowsByItemInfo(SetData, Record, EquippedRows, EquippedDisplayNames)
+	GearScore_AddVisibleSetRowsByServerSignature(SetData, Record, CurrentServerRow and CurrentServerRow.Signature, ServerSet, EquippedRows, EquippedDisplayNames)
 	GearScore_TransmogSetDebug("equipped real set count "..tostring(EquippedCount).."/"..tostring(SetData.Total))
 	if EquippedCount <= 0 then return; end
 
-	if not GearScore_PatchVisibleSetTooltip(Tooltip, SetData, Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, CurrentRows, ServerSet, CurrentServerRow, EquippedCount) then
+	if not GearScore_PatchVisibleSetTooltip(Tooltip, SetData, Equipped, EquippedNorm, EquippedRows, EquippedDisplayNames, CurrentRows, ServerSet, CurrentServerRow, EquippedCount, Slot) then
 		GearScore_TransmogSetDebug("visible set block not found, adding real block")
 		GearScore_AddRealSetBlock(Tooltip, SetData, Equipped, EquippedCount)
 	else
@@ -1135,6 +1227,18 @@ function GearScore_FixTransmogSetTooltip(Tooltip, UnitToken, Slot)
 			GearScore_TransmogSetDebug("self server set refresh throttled age="..tostring(GetTime() - GS_SelfSetRefreshAt))
 		end
 	end
+	if UnitToken ~= "player" and (not Record.Sets or not Record.Sets.BySlot or not Record.Sets.BySlot[Slot]) then
+		local Now = GetTime()
+		local RefreshKey = Name..":"..tostring(Slot)
+		local LastRefresh = GS_SetRefreshThrottle[RefreshKey] or 0
+		GearScore_TransmogSetDebug("target server sets missing for "..Name.." slot "..tostring(Slot)..", request refresh")
+		if (Now - LastRefresh) > 3 then
+			GS_SetRefreshThrottle[RefreshKey] = Now
+			GearScore_RequestServerItemData(Name, 1)
+		else
+			GearScore_TransmogSetDebug("target server set refresh throttled age="..tostring(Now - LastRefresh))
+		end
+	end
 
 	local RealItemCode = Record.Equip[Slot]
 	if (not RealItemCode or RealItemCode == "0:0") and GetMouseFocus then
@@ -1146,6 +1250,7 @@ function GearScore_FixTransmogSetTooltip(Tooltip, UnitToken, Slot)
 			RealItemCode = Record.Equip[Slot]
 		end
 	end
+	if not RealItemCode or RealItemCode == "0:0" then return; end
 	GearScore_TransmogSetDebug("tooltip "..Name.." slot "..tostring(Slot).." real="..tostring(RealItemCode).." source="..tostring(Record.Scanned))
 	GearScore_FixRecordItemTooltip(Tooltip, Record, Slot, Name)
 end
@@ -1436,10 +1541,19 @@ end
 function GearScore_ParseServerMeta(Field)
 	if not Field or string.sub(Field, 1, 5) ~= "META@" then return nil; end
 
+	local DecodeMetaValue = function(Value)
+		if not Value then return Value; end
+		Value = string.gsub(Value, "%%(%x%x)", function(Hex)
+			return string.char(tonumber(Hex, 16))
+		end)
+		return Value
+	end
+
 	local Meta = {}
 	for Pair in string.gmatch(string.sub(Field, 6), "[^;]+") do
 		local _, _, Key, RawValue = string.find(Pair, "^([^=]+)=(.*)$")
 		if Key and RawValue then
+			RawValue = DecodeMetaValue(RawValue)
 			Meta[Key] = tonumber(RawValue) or RawValue
 		end
 	end
@@ -1474,19 +1588,23 @@ function GearScore_ParseServerSets(Field)
 		local Slot, SetId, RowName, FullName, Signature = Parts[1], Parts[2], Parts[3], Parts[4], Parts[5]
 		Slot = tonumber(Slot)
 		SetId = tonumber(SetId)
-		if Slot and SetId and RowName and FullName then
-			RowName = GearScore_DecodeServerSetText(RowName)
-			FullName = GearScore_DecodeServerSetText(FullName)
+		if Slot and SetId then
+			RowName = RowName and GearScore_DecodeServerSetText(RowName) or nil
+			FullName = FullName and GearScore_DecodeServerSetText(FullName) or RowName
 			Signature = Signature ~= "" and Signature or nil
 			if not Sets[SetId] then Sets[SetId] = { Rows = {}, NormRows = {}, FullNames = {}, NormFullNames = {}, Signature = Signature }; end
 			local Row = { Slot = Slot, SetId = SetId, RowName = RowName, FullName = FullName, Signature = Signature }
 			GearScore_TransmogSetDebug("parse SETS slot="..tostring(Slot).." setId="..tostring(SetId).." sig="..GearScore_ShortSignature(Signature).." row='"..tostring(RowName).."' full='"..tostring(FullName).."'")
-			Sets[SetId].Rows[RowName] = Row
-			Sets[SetId].FullNames[FullName] = Row
-			local NormRow = GearScore_NormalizeSetItemName(RowName)
-			if NormRow then Sets[SetId].NormRows[NormRow] = Row; end
-			local NormFullName = GearScore_NormalizeSetItemName(FullName)
-			if NormFullName then Sets[SetId].NormFullNames[NormFullName] = Row; end
+			if RowName then
+				Sets[SetId].Rows[RowName] = Row
+				local NormRow = GearScore_NormalizeSetItemName(RowName)
+				if NormRow then Sets[SetId].NormRows[NormRow] = Row; end
+			end
+			if FullName then
+				Sets[SetId].FullNames[FullName] = Row
+				local NormFullName = GearScore_NormalizeSetItemName(FullName)
+				if NormFullName then Sets[SetId].NormFullNames[NormFullName] = Row; end
+			end
 			Sets.BySlot[Slot] = Row
 			if Signature then
 				if not Sets.BySignature[Signature] then Sets.BySignature[Signature] = {}; end
@@ -1505,17 +1623,29 @@ function GearScore_ParseServerSetMembers(Field)
 	local Members = { BySet = {}, BySignature = {} }
 	for Entry in string.gmatch(string.sub(Field, 6), "[^^]+") do
 		local Parts = GearScore_SplitServerField(Entry)
-		local SetId, Signature, Slot, RowName = tonumber(Parts[1]), Parts[2], tonumber(Parts[3]), Parts[4]
-		if SetId and Slot and RowName then
-			RowName = GearScore_DecodeServerSetText(RowName)
+		local SetId = tonumber(Parts[1])
+		local Signature, Slot, RowName = Parts[2], tonumber(Parts[3]), Parts[4]
+		if SetId and tonumber(Parts[2]) and not Parts[3] then
+			Signature = nil
+			Slot = tonumber(Parts[2])
+			RowName = nil
+		end
+		if SetId and Slot then
+			RowName = RowName and GearScore_DecodeServerSetText(RowName) or nil
 			Signature = Signature ~= "" and Signature or nil
 			local Row = { SetId = SetId, Signature = Signature, Slot = Slot, RowName = RowName }
 			GearScore_TransmogSetDebug("parse MEMB setId="..tostring(SetId).." slot="..tostring(Slot).." sig="..GearScore_ShortSignature(Signature).." row='"..tostring(RowName).."'")
-			if not Members.BySet[SetId] then Members.BySet[SetId] = { Rows = {}, NormRows = {}, BySlot = {} }; end
-			Members.BySet[SetId].Rows[RowName] = Row
-			Members.BySet[SetId].BySlot[Slot] = Row
-			local NormRow = GearScore_NormalizeSetItemName(RowName)
-			if NormRow then Members.BySet[SetId].NormRows[NormRow] = Row; end
+			if not Members.BySet[SetId] then Members.BySet[SetId] = { Rows = {}, NormRows = {}, BySlot = {}, Ordered = {}, OrderedSlots = {} }; end
+			if RowName then Members.BySet[SetId].Rows[RowName] = Row; end
+			tinsert(Members.BySet[SetId].Ordered, Row)
+			if not Members.BySet[SetId].BySlot[Slot] then
+				Members.BySet[SetId].BySlot[Slot] = Row
+				tinsert(Members.BySet[SetId].OrderedSlots, Row)
+			end
+			if RowName then
+				local NormRow = GearScore_NormalizeSetItemName(RowName)
+				if NormRow then Members.BySet[SetId].NormRows[NormRow] = Row; end
+			end
 			if Signature then
 				if not Members.BySignature[Signature] then Members.BySignature[Signature] = {}; end
 				if not Members.BySignature[Signature][SetId] then Members.BySignature[Signature][SetId] = Members.BySet[SetId]; end
@@ -1795,7 +1925,7 @@ function GearScore_HandleServerItemReply(Message, Sender)
 	if not Fields[1] then return; end
 
 	local Name = Fields[1]
-	GearScore_TransmogSetDebug("server reply for "..Name.." from "..tostring(Sender))
+	GearScore_TransmogSetDebug("server reply for "..Name.." from "..tostring(Sender).." len="..tostring(string.len(Message)).." fields="..tostring(table.getn(Fields)))
 	local Equip = {}
 	for i = 1, 18 do
 		Equip[i] = Fields[i + 1] or "0:0"
@@ -1807,6 +1937,12 @@ function GearScore_HandleServerItemReply(Message, Sender)
 	local ServerSetMembers = nil
 	local ServerSockets = nil
 	for i = 20, table.getn(Fields) do
+		if GS_TransmogSetVerboseDebug then
+			local Prefix = string.match(Fields[i], "^([^@]+)@")
+			if Prefix then
+				GearScore_TransmogSetVerbose("server field#"..tostring(i).." "..tostring(Prefix).." len="..tostring(string.len(Fields[i])).." head='"..tostring(string.sub(Fields[i], 1, 80)).."'")
+			end
+		end
 		ServerStats = GearScore_ParseServerStats(Fields[i]) or ServerStats
 		ServerMeta = GearScore_ParseServerMeta(Fields[i]) or ServerMeta
 		ServerSets = GearScore_ParseServerSets(Fields[i]) or ServerSets
@@ -1818,6 +1954,15 @@ function GearScore_HandleServerItemReply(Message, Sender)
 		local SetRows = 0
 		for _, _ in pairs(ServerSets.BySlot) do SetRows = SetRows + 1; end
 		GearScore_TransmogSetDebug("server set rows "..tostring(SetRows))
+		if ServerSets.BySignature then
+			for Signature, Slots in pairs(ServerSets.BySignature) do
+				local SlotList = ""
+				for Slot, Row in pairs(Slots) do
+					SlotList = SlotList..(SlotList ~= "" and "," or "")..tostring(Slot)..":"..tostring(Row and Row.RowName)
+				end
+				GearScore_TransmogSetVerbose("BySignature "..GearScore_ShortSignature(Signature).." slots="..SlotList)
+			end
+		end
 	else
 		GearScore_TransmogSetDebug("server set rows none")
 	end
@@ -1829,6 +1974,13 @@ function GearScore_HandleServerItemReply(Message, Sender)
 			for _, _ in pairs(MemberSet.BySlot) do MemberRows = MemberRows + 1; end
 		end
 		GearScore_TransmogSetDebug("server member sets "..tostring(MemberSets).." rows "..tostring(MemberRows))
+		for SetId, MemberSet in pairs(ServerSetMembers.BySet) do
+			local SlotList = ""
+			for Index, Row in ipairs(MemberSet.OrderedSlots or {}) do
+				SlotList = SlotList..(SlotList ~= "" and "," or "")..tostring(Index).."=>"..tostring(Row.Slot)..":"..tostring(Row.RowName)
+			end
+			GearScore_TransmogSetVerbose("MEMB setId="..tostring(SetId).." orderedSlots="..SlotList)
+		end
 	else
 		GearScore_TransmogSetDebug("server member sets none")
 	end
@@ -1856,6 +2008,19 @@ function GearScore_UpdateSearchBox(Box)
 	GearScore_DisplayDatabase("Search")
 end
 
+function GearScore_RunDatabaseSearch(SortType)
+	local Query = GS_SearchXBox and GS_SearchXBox:GetText() or ""
+	Query = string.gsub(Query or "", "^%s+", "")
+	Query = string.gsub(Query, "%s+$", "")
+	GearScore_HideDatabase()
+	if Query == "" then
+		GearScore_DisplayDatabase(GS_LastDatabaseGroup or (GS_DisplayedGroup ~= "Search" and GS_DisplayedGroup) or "All", SortType or GS_SortedType or "GearScore")
+	else
+		if GS_DisplayedGroup and GS_DisplayedGroup ~= "Search" then GS_LastDatabaseGroup = GS_DisplayedGroup; end
+		GearScore_DisplayDatabase("Search", SortType or "GearScore")
+	end
+end
+
 function GearScore_RequestOrScan(Name, Target)
 	if not Name then return; end
 
@@ -1876,6 +2041,32 @@ function GearScore_RequestOrScan(Name, Target)
 	if Name ~= UnitName("player") then return; end
 	if not Target then return; end
 	GearScore_GetScore(Name, Target)
+end
+
+function GearScore_StartProfileNotFoundTimer(Name)
+	if not Name then return; end
+	GS_ProfileLookupName = Name
+	if not GS_ProfileLookupFrame then
+		GS_ProfileLookupFrame = CreateFrame("Frame", "GS_ProfileLookupFrame")
+		GS_ProfileLookupFrame.Elapsed = 0
+		GS_ProfileLookupFrame:SetScript("OnUpdate", function(self, elapsed)
+			self.Elapsed = (self.Elapsed or 0) + elapsed
+			if self.Elapsed < 4 then return; end
+			self:Hide()
+			local Name = GS_ProfileLookupName
+			if not Name or GS_DisplayPlayer ~= Name or not GS_DisplayFrame:IsVisible() then return; end
+			if GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[Name] then return; end
+			GS_GearScoreText:SetText("Не знайдено")
+			GS_InfoText:SetText("")
+			GS_GuildText:SetText("")
+			GS_DateText:SetText("")
+			GS_AverageText:SetText("")
+			GS_LocationText:SetText("")
+			GearScore_SetDisplayStats(Name, nil)
+		end)
+	end
+	GS_ProfileLookupFrame.Elapsed = 0
+	GS_ProfileLookupFrame:Show()
 end
 
 function GearScore_ShouldWaitForServerRecord(Name, UnitToken)
@@ -1905,7 +2096,7 @@ function GearScore_GetRecordClassColors(Record)
 end
 
 function GearScore_GetRecordGuild(Record)
-	if not Record or not Record.Guild or Record.Guild == "" then return ""; end
+	if not Record or not Record.Guild or Record.Guild == "" or Record.Guild == "*" then return ""; end
 	return Record.Guild
 end
 
@@ -1919,6 +2110,20 @@ end
 
 function GearScore_GetSortableGuild(Record)
 	return strlower(GearScore_GetRecordGuild(Record) or "")
+end
+
+function GearScore_NormalizeRosterName(Name)
+	if not Name then return nil; end
+	Name = tostring(Name)
+	Name = string.gsub(Name, "%-.+$", "")
+	return Name
+end
+
+function GearScore_SameGuildName(Left, Right)
+	Left = GearScore_GetRecordGuild({ Guild = Left })
+	Right = GearScore_GetRecordGuild({ Guild = Right })
+	if Left == "" or Right == "" then return nil; end
+	return strlower(Left) == strlower(Right)
 end
 
 -------------------------- Get Mouseover Score -----------------------------------
@@ -2335,10 +2540,19 @@ ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER",GearScoreChatAdd)
 function GearScoreSetItemRef(arg1, arg2, ...)
 	if not arg1 then return; end
 	if string.sub(arg1, 1, 10) == "player:X33" then
-        GearScore_DisplayUnit(string.sub(arg1, 11), 1)
+        GearScore_OpenProfile(string.sub(arg1, 11), 1)
         return
 	end
  	--return OriginalSetItemRef(arg1, arg2, ...)
+end
+
+function GearScore_OpenProfile(Name, Auto)
+	if not Name or Name == "" then Name = UnitName("player"); end
+	if ( GS_OptionsFrame and GS_OptionsFrame:IsVisible() ) then GearScore_HideOptions(); end
+	GearScore_HideDatabase()
+	PanelTemplates_SetTab(GS_DisplayFrame, 1)
+	GS_GearFrame:Show(); GS_NotesFrame:Hide(); GS_DefaultFrame:Show()
+	GearScore_DisplayUnit(Name, Auto)
 end
 
 
@@ -2432,6 +2646,7 @@ function GearScore_OnEnter(Tooltip, UnitToken, ItemSlot, Argument)
 	end
 	local TooltipItemName, TooltipItemLink = (Tooltip or GameTooltip):GetItem()
 	local TooltipItemCode, TooltipItemId = GearScore_GetItemCode(TooltipItemLink)
+	if not TooltipItemId then return OriginalOnEnter; end
 	GearScore_TransmogSetDebug("SetInventoryItem unit="..tostring(UnitToken).." resolved="..tostring(ResolvedUnit).." slot="..tostring(ItemSlot).." focus="..tostring(FocusName).."#"..tostring(FocusId).." item="..tostring(TooltipItemId))
 	if ResolvedUnit and ItemSlot then
 		GS_LastInventoryTooltip = { ["Name"] = UnitName(ResolvedUnit), ["UnitToken"] = ResolvedUnit, ["Slot"] = ItemSlot, ["Time"] = GetTime() }
@@ -2476,15 +2691,64 @@ function GearScore_HookGearFrameTooltips()
 	GS_GearFrameTooltipsHooked = 1
 end
 
-function GS_TmogSetDebugToggle()
+function GS_TmogSetDebugToggle(Command)
+	local Verbose = Command and string.find(strlower(Command), "verbose")
 	if GS_TransmogSetDebug then
 		GS_TransmogSetDebug = nil
+		GS_TransmogSetVerboseDebug = nil
 		if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100GSTSet debug disabled|r"); end
 	else
 		GS_TransmogSetDebug = 1
-		if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100GSTSet debug enabled|r"); end
+		GS_TransmogSetVerboseDebug = Verbose and 1 or nil
+		if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100GSTSet debug enabled"..(GS_TransmogSetVerboseDebug and " verbose" or "").."|r"); end
 	end
 end
+
+function GS_TmogSetDump(Name)
+	Name = GearScore_NormalizeName(Name)
+	if not Name then Name = UnitName("player"); end
+	local Record = GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[Name]
+	if not Record then print("GSTSet dump: no record for "..tostring(Name)); return; end
+	local SetRows = 0
+	local SignatureRows = 0
+	local MemberSets = 0
+	local MemberSlots = 0
+	if Record.Sets and Record.Sets.BySlot then
+		for _, _ in pairs(Record.Sets.BySlot) do SetRows = SetRows + 1; end
+	end
+	if Record.Sets and Record.Sets.BySignature then
+		for _, Slots in pairs(Record.Sets.BySignature) do
+			for _, _ in pairs(Slots) do SignatureRows = SignatureRows + 1; end
+		end
+	end
+	if Record.Sets and Record.Sets.Members and Record.Sets.Members.BySet then
+		for _, MemberSet in pairs(Record.Sets.Members.BySet) do
+			MemberSets = MemberSets + 1
+			for _, _ in pairs(MemberSet.BySlot or {}) do MemberSlots = MemberSlots + 1; end
+		end
+	end
+	print("GSTSet dump "..tostring(Name)..": scanned="..tostring(Record.Scanned).." setRows="..tostring(SetRows).." sigRows="..tostring(SignatureRows).." memberSets="..tostring(MemberSets).." memberSlots="..tostring(MemberSlots))
+end
+
+function GS_TmogSetRefresh(Command)
+	local Name = GearScore_NormalizeName(Command)
+	if not Name and UnitExists("target") and UnitIsPlayer("target") then Name = UnitName("target"); end
+	if not Name then Name = UnitName("player"); end
+	if not Name then return; end
+
+	if not GS_ServerRequestThrottle then GS_ServerRequestThrottle = {}; end
+	GS_ServerRequestThrottle[Name] = nil
+	if GS_SetRefreshThrottle then
+		for Key, _ in pairs(GS_SetRefreshThrottle) do
+			if string.find(Key, Name..":", 1, true) == 1 then GS_SetRefreshThrottle[Key] = nil; end
+		end
+	end
+
+	GearScore_TransmogSetDebug("direct refresh request for "..tostring(Name))
+	if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100GSTSet refresh -> "..tostring(Name).."|r"); end
+	GearScore_RequestServerItemData(Name, 1)
+end
+
 function MyPaperDoll()
 	GearScore_GetScore(UnitName("player"), "player"); GearScore_RequestSelfServerItemData(1); GearScore_Send(UnitName("player"), "ALL"); 
 	--SendAddonMessage( "GSY_Version", GS_Settings["OldVer"], "GUILD")
@@ -2543,9 +2807,14 @@ end
 function GS_MANSET(Command)
 	if ( strlower(Command) == "" ) or ( strlower(Command) == "options" ) or ( strlower(Command) == "option" ) or ( strlower(Command) == "help" ) then for i,v in ipairs(GS_CommandList) do print(v); end; return end
 	if ( strlower(Command) == "show" ) then GS_Settings["Player"] = GS_ShowSwitch[GS_Settings["Player"]]; if ( GS_Settings["Player"] == 1 ) or ( GS_Settings["Player"] == 2 ) then print("Player Scores: On"); else print("Player Scores: Off"); end; return; end
-	if ( strlower(Command) == "log_error" ) then GS_TmogSetDebugToggle(); return; end
-	if ( strlower(Command) == "setdebug" ) then GS_TmogSetDebugToggle(); return; end
-	if ( strlower(Command) == "refreshsets" ) then GearScore_ForceRefreshSelfServerSets(); return; end
+	if ( strlower(Command) == "log_error" ) then GS_TmogSetDebugToggle(Command); return; end
+	if ( strlower(Command) == "setdebug" ) or ( strlower(Command) == "setdebug verbose" ) then GS_TmogSetDebugToggle(Command); return; end
+	if ( strlower(Command) == "setdump" ) then GS_TmogSetDump(); return; end
+	if ( strlower(Command) == "refreshsets" ) then
+		GearScore_ForceRefreshSelfServerSets()
+		if UnitExists("target") and UnitIsPlayer("target") and UnitName("target") ~= UnitName("player") then GearScore_ForceRefreshUnitServerSets("target"); end
+		return
+	end
 	if ( strlower(Command) == "player" ) then GS_Settings["Player"] = GS_ShowSwitch[GS_Settings["Player"]]; if ( GS_Settings["Player"] == 1 ) or ( GS_Settings["Player"] == 2 ) then print("Player Scores: On"); else print("Player Scores: Off"); end; return; end
     if ( strlower(Command) == "item" ) then GS_Settings["Item"] = GS_ItemSwitch[GS_Settings["Item"]]; if ( GS_Settings["Item"] == 1 ) or ( GS_Settings["Item"] == 3 ) then print("Item Scores: On"); else print("Item Scores: Off"); end; return; end
 	if ( strlower(Command) == "describe" ) then GS_Settings["Description"] = GS_Settings["Description"] * -1; if ( GS_Settings["Description"] == 1 ) then print ("Descriptions: On"); else print ("Descriptions: Off"); end; return; end
@@ -2580,12 +2849,15 @@ function GS_MANSET(Command)
  	
 end
 function GS_SCANSET(Command)
-		if Command and strlower(Command) == "refreshsets" then GearScore_ForceRefreshSelfServerSets(); return; end
+		if Command and strlower(Command) == "refreshsets" then
+			GearScore_ForceRefreshSelfServerSets()
+			if UnitExists("target") and UnitIsPlayer("target") and UnitName("target") ~= UnitName("player") then GearScore_ForceRefreshUnitServerSets("target"); end
+			return
+		end
 		if ( GS_OptionsFrame:IsVisible() ) then GearScore_HideOptions(); end		
 		PanelTemplates_SetTab(GS_DisplayFrame, 1)
 		GS_DisplayFrame:Hide();
-		GS_ExPFrame:Hide();
-		GS_GearFrame:Show(); GS_NotesFrame:Hide(); GS_DefaultFrame:Show(); GS_ExPFrame:Hide()
+		GS_GearFrame:Show(); GS_NotesFrame:Hide(); GS_DefaultFrame:Show()
 		GS_GearScoreText:Show(); GS_LocationText:Show(); GS_DateText:Show(); GS_AverageText: Show();
 		
 	    if ( UnitName("target") ) and ( not Command or Command == "" ) then 
@@ -2656,6 +2928,7 @@ function GearScore_DisplayUnit(Name, Auto)
 		GS_AverageText:SetText("")
 		GS_LocationText:SetText("")
 		GS_GearScoreText:SetText("Очікування даних...")
+		GearScore_StartProfileNotFoundTimer(Name)
 		GearScore_SetDisplayStats(Name, UnitToken)
 		local backdrop = {}
 		for i = 1, 18 do if ( i ~=4 ) then backdrop = { bgFile = GS_TextureFiles[i] }; _G["GS_Frame"..i]:SetBackdrop(backdrop); end; end
@@ -2682,18 +2955,17 @@ function GearScore_DisplayUnit(Name, Auto)
 		GS_NameText:SetText(Record.Name or Name)
 	    GS_NameText:SetTextColor(ClassRed, ClassGreen, ClassBlue, 1)
 		Red, Green, Blue = GearScore_GetQuality(Record.GearScore)
-		GS_GearScoreText:SetText("Raw GearScore: "..(Record.GearScore or "No Record"))
+		GS_GearScoreText:SetText("GearScore: "..(Record.GearScore or "немає запису"))
 		GS_GearScoreText:SetTextColor(Red,Blue,Green)
 		GS_GuildText:SetTextColor(ClassRed, ClassGreen, ClassBlue, 1)
 		GS_GuildText:SetText(Record.Guild or "")
 		local Date, DateRed, DateGreen, DateBlue = GearScore_GetDate(Record.Date)
 		ColorStringDate = "|cff"..string.format("%02x%02x%02x", DateRed * 255, DateGreen * 255, DateBlue * 255) 
-		local MyDateText = Date.." days ago"; if ( tonumber(Date) == 0 ) then MyDateText = "Today"; end
-		GS_DateText:SetText("Scanned "..ColorStringDate..MyDateText.."|r  by  "..(Record.Scanned or "Unknown"))
-		GS_AverageText:SetText("Average ItemLevel:|cFFFFFFFF "..(Record.Average or "-"))
+		local MyDateText = Date.." дн. тому"; if ( tonumber(Date) == 0 ) then MyDateText = "Сьогодні"; end
+		GS_DateText:SetText("Скановано "..ColorStringDate..MyDateText.."|r, ким: "..(Record.Scanned or "невідомо"))
+		GS_AverageText:SetText("Сер. рівень речей:|cFFFFFFFF "..(Record.Average or "-"))
 		GS_LocationText:SetText(GS_Zones[Record.Location] or Record.Location or "")
 		GearScore_SetDisplayStats(Name, UnitToken)
-		GearScore_UpdateRaidColors(Name)
 	else
 		GS_InfoText:SetText("")
 		GS_NameText:SetText(Name)
@@ -2701,7 +2973,7 @@ function GearScore_DisplayUnit(Name, Auto)
 		GS_DateText:SetText("")
 		GS_AverageText:SetText("")
 		GS_LocationText:SetText("")
-		GS_GearScoreText:SetText("No Record")
+		GS_GearScoreText:SetText("Немає запису")
 		GearScore_SetDisplayStats(Name, UnitToken)
 		local backdrop = {}
 		for i = 1, 18 do if ( i ~=4 ) then backdrop = { bgFile = GS_TextureFiles[i] }; _G["GS_Frame"..i]:SetBackdrop(backdrop); end; end
@@ -2711,21 +2983,6 @@ function GearScore_DisplayUnit(Name, Auto)
 
  	GS_EditBox1:SetAutoFocus(0)
  end
-
- function GearScore_UpdateRaidColors(Name)
- 	local RealmName = GetRealmName()
- 	GS_InstanceText1:SetTextColor(GearScore_GetRaidColor(2600, GS_Data[RealmName].Players[Name].GearScore))
-	GS_InstanceText2:SetTextColor(GearScore_GetRaidColor(2896, GS_Data[RealmName].Players[Name].GearScore))
-	GS_InstanceText3:SetTextColor(GearScore_GetRaidColor(3353, GS_Data[RealmName].Players[Name].GearScore))
-	GS_InstanceText4:SetTextColor(GearScore_GetRaidColor(3563, GS_Data[RealmName].Players[Name].GearScore))
-	GS_InstanceText5:SetTextColor(GearScore_GetRaidColor(3809, GS_Data[RealmName].Players[Name].GearScore))
-	GS_InstanceText6:SetTextColor(GearScore_GetRaidColor(4019, GS_Data[RealmName].Players[Name].GearScore))
-	GS_InstanceText7:SetTextColor(GearScore_GetRaidColor(4475, GS_Data[RealmName].Players[Name].GearScore))
-	GS_InstanceText8:SetTextColor(GearScore_GetRaidColor(4932, GS_Data[RealmName].Players[Name].GearScore))
-	GS_InstanceText9:SetTextColor(GearScore_GetRaidColor(4686, GS_Data[RealmName].Players[Name].GearScore))
-	GS_InstanceText10:SetTextColor(GearScore_GetRaidColor(5142, GS_Data[RealmName].Players[Name].GearScore))
-	GS_InstanceText11:SetTextColor(GearScore_GetRaidColor(5598, GS_Data[RealmName].Players[Name].GearScore))			
-end
 
 function GearScore_ShowOptions()
 	GS_OptionalDisplayed = 	GS_Displayed
@@ -2743,14 +3000,14 @@ function GearScore_ShowOptions()
 	if ( GS_Settings["KeepFaction"] == 1 ) then GS_FactionCheck:SetChecked(true); else GS_FactionCheck:SetChecked(false); end
 	if ( GS_Settings["ML"] == 1 ) then GS_MasterlootCheck:SetChecked(true); else GS_MasterlootCheck:SetChecked(false); end
 	if ( GS_Settings["CHAT"] == 1 ) then GS_ChatCheck:SetChecked(true); else GS_ChatCheck:SetChecked(false); end
-	GS_DatabaseAgeSliderText:SetText("Keep data for: "..(GS_Settings["DatabaseAgeSlider"] or 30).." days.")
+	GS_DatabaseAgeSliderText:SetText("Зберігати дані: "..(GS_Settings["DatabaseAgeSlider"] or 30).." дн.")
 	GS_DatabaseAgeSlider:SetValue(GS_Settings["DatabaseAgeSlider"] or 30)
 	GS_LevelEditBox:SetText(GS_Settings["MinLevel"])
 	--Set SpecScore Options--
 	local class, englishClass = UnitClass("player")
 	for i = 1,4 do _G["GS_SpecFontString"..i]:Hide(); _G["GS_SpecScoreCheck"..i]:Hide(); end
     for i, v in ipairs(GearScoreClassSpecList[englishClass]) do
-    _G["GS_SpecFontString"..i]:SetText("Show "..GearScoreClassSpecList[englishClass][i].." SpecScores")
+    _G["GS_SpecFontString"..i]:SetText("Показувати SpecScore: "..GearScoreClassSpecList[englishClass][i])
    		_G["GS_SpecScoreCheck"..i]:SetText(GearScoreClassSpecList[englishClass][i])
    		_G["GS_SpecFontString"..i]:Show(); _G["GS_SpecScoreCheck"..i]:Show()
     	if not ( GS_Settings["ShowSpecScores"] ) then GS_Settings["ShowSpecScores"] = {}; end
@@ -2758,7 +3015,7 @@ function GearScore_ShowOptions()
     	if ( GS_Settings["ShowSpecScores"][GearScoreClassSpecList[englishClass][i]] == 1 ) then _G["GS_SpecScoreCheck"..i]:SetChecked(1); else _G["GS_SpecScoreCheck"..i]:SetChecked(0); end
     end
 	
-	GS_Displayed = 1; GS_OptionsFrame:Show(); GS_GearFrame:Hide(); GS_ExPFrame:Hide()
+	GS_Displayed = 1; GS_OptionsFrame:Show(); GS_GearFrame:Hide()
 end 
  
 function GearScore_HideOptions()
@@ -2852,6 +3109,10 @@ end
 function GearScore_DisplayDatabase(Group, SortType, Auto, GSX_StartPage)
 	--GS_HighlightedColNum = 1
 	if not ( Group ) then Group = "Party"; end
+	if GS_DisplayedGroup and GS_DisplayedGroup ~= Group then
+		GSX_DataBase = nil
+	end
+	if Group ~= "Search" then GS_LastDatabaseGroup = Group; end
 	GS_StartPage = GSX_StartPage
 	if not ( GS_StartPage ) or ( GS_StartPage < 0 ) then GS_StartPage = 0; end
 	
@@ -2874,7 +3135,7 @@ function GearScore_DisplayDatabase(Group, SortType, Auto, GSX_StartPage)
 	tooltip:SetHeight(420)
 	tooltip:SetAlpha(100)
 	tooltip:SetScale(1)
-	tooltip:AddLine('#', 'GearScore', 'Name', "iLevel", 'Level', 'Race', 'Class', 'Guild', 'Days Old', 'Sent By'); tooltip:AddSeparator(1, 1, 1, 1)
+	tooltip:AddLine('#', 'GearScore', "Ім'я", "Ілвл", 'Рівень', 'Раса', 'Клас', 'Гільдія', 'Днів', 'Ким'); tooltip:AddSeparator(1, 1, 1, 1)
 	tooltip:SetColumnLayout(10, "CENTER", "CENTER", "LEFT", "CENTER", "CENTER", "LEFT", "LEFT", "CENTER", "CENTER", "LEFT") 
 
 
@@ -2983,19 +3244,46 @@ function GearScore_HideDatabase(erase)
 	end
 
 	if ( Group == "Guild" ) then
-	GuildRoster(); for i = 1, GetNumGuildMembers(1) do	if ( GS_Data[GetRealmName()].Players[GetGuildRosterInfo(i)] ) then GSL_DataBase[count] = GS_Data[GetRealmName()].Players[GetGuildRosterInfo(i)]; count = count + 1; end; end; end
- if ( Group == "Search" ) then count = 0; for i,v in pairs(GS_Data[GetRealmName()].Players) do local DataString = tostring((v.GearScore or 0)..(v.Name or "")..(v.Level or "")..GearScore_GetRecordGuild(v)..GearScore_GetRecordDisplayClass(v)..GearScore_GetRecordDisplayRace(v)); if string.find(strlower(DataString), strlower(GS_SearchXBox:GetText() or "")) then count = count + 1; GSL_DataBase[count] = v; end; end; end
-    if ( Group == "Friends" ) then GuildRoster(); for i = 1, GetNumFriends(1) do	if ( GS_Data[GetRealmName()].Players[GetFriendInfo(i)] ) then GSL_DataBase[count] = GS_Data[GetRealmName()].Players[GetFriendInfo(i)]; count = count + 1; end; end; end
+		count = 0
+		local PlayerGuild = GetGuildInfo("player")
+		if PlayerGuild then
+			GuildRoster()
+			local RosterNames = {}
+			for i = 1, GetNumGuildMembers(1) do
+				local RosterName = GearScore_NormalizeRosterName(GetGuildRosterInfo(i))
+				if RosterName then RosterNames[RosterName] = 1; end
+			end
+			for Name, Record in pairs(GS_Data[GetRealmName()].Players) do
+				if RosterNames[Name] or (GearScore_NormalizeRosterName(Record.Name) and RosterNames[GearScore_NormalizeRosterName(Record.Name)]) or GearScore_SameGuildName(Record.Guild, PlayerGuild) then
+					count = count + 1
+					GSL_DataBase[count] = Record
+				end
+			end
+		end
+	end
+	if ( Group == "Search" ) then
+		count = 0
+		local Query = GS_SearchXBox and GS_SearchXBox:GetText() or ""
+		Query = string.gsub(Query or "", "^%s+", "")
+		Query = string.gsub(Query, "%s+$", "")
+		if Query ~= "" then
+			for i,v in pairs(GS_Data[GetRealmName()].Players) do
+				local DataString = tostring((v.GearScore or 0)..(v.Name or "")..(v.Level or "")..GearScore_GetRecordGuild(v)..GearScore_GetRecordDisplayClass(v)..GearScore_GetRecordDisplayRace(v))
+				if string.find(strlower(DataString), strlower(Query), 1, true) then count = count + 1; GSL_DataBase[count] = v; end
+			end
+		end
+	end
+    if ( Group == "Friends" ) then count = 0; for i = 1, GetNumFriends(1) do local FriendName = GearScore_NormalizeRosterName(GetFriendInfo(i)); if FriendName and GS_Data[GetRealmName()].Players[FriendName] then count = count + 1; GSL_DataBase[count] = GS_Data[GetRealmName()].Players[FriendName]; end; end; end
 	
-	if Group == "All" then GSDatabaseInfoString:SetText("Database: "..count.." entries. (Approx "..floor(0.8372131704586988304093567251462 * count).."Kb)"); GS_Settings["DatabaseSize"] = count;
-	else if GS_Settings["DatabaseSize"] then GSDatabaseInfoString:SetText("Database: "..GS_Settings["DatabaseSize"].." entries. (Approx "..floor(0.8372131704586988304093567251462 * GS_Settings["DatabaseSize"]).."Kb)"); end
+	if Group == "All" then GSDatabaseInfoString:SetText("База: "..count.." записів. (прибл. "..floor(0.8372131704586988304093567251462 * count).." КБ)"); GS_Settings["DatabaseSize"] = count;
+	else if GS_Settings["DatabaseSize"] then GSDatabaseInfoString:SetText("База: "..GS_Settings["DatabaseSize"].." записів. (прибл. "..floor(0.8372131704586988304093567251462 * GS_Settings["DatabaseSize"]).." КБ)"); end
 	end
 	return GSL_DataBase
 end
 
  function GearScore_ShowReport()
  	GS_ReportFrame:Show()
- 	GS_SliderText:SetText("Top: "..GS_Settings["Slider"])
+ 	GS_SliderText:SetText("Топ: "..GS_Settings["Slider"])
  	GS_Slider:SetValue(GS_Settings["Slider"])
  end
  
@@ -3062,7 +3350,7 @@ function GearScore_DatabaseOnClick(Event, Cell, Misc, Button)
 	local LineCount = GS_DatabaseFrame.tooltip:GetLineCount(); if not ( LineCount ) then LineCount = 0; end
 	--print(LineCount)
 	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 3 ) and ( GSX_DataBase[Cell["_line"]-2] ) and ( Cell["_line"] ~= 28 ) then --GearScore_Send(GSX_DataBase[Cell["_line"]-2+GS_StartPage].Name, "ALL"); 
-	GearScore_DisplayUnit(GSX_DataBase[Cell["_line"]-2+GS_StartPage].Name); return; end
+	GearScore_OpenProfile(GSX_DataBase[Cell["_line"]-2+GS_StartPage].Name); return; end
 	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 6 ) and ( GSX_DataBase[Cell["_line"]-2] ) then GS_SearchXBox:SetText(GearScore_GetRecordDisplayRace(GSX_DataBase[Cell["_line"]-2+GS_StartPage])); GearScore_HideDatabase(); GearScore_DisplayDatabase("Search"); return; end
 	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 7 ) and ( GSX_DataBase[Cell["_line"]-2] ) then GS_SearchXBox:SetText(GearScore_GetRecordDisplayClass(GSX_DataBase[Cell["_line"]-2+GS_StartPage])); GearScore_HideDatabase(); GearScore_DisplayDatabase("Search"); return; end
 	if ( Cell["_line"] > 2 ) and ( Cell["_column"] == 8 ) and ( GSX_DataBase[Cell["_line"]-2] ) then GS_SearchXBox:SetText(GearScore_GetRecordGuild(GSX_DataBase[Cell["_line"]-2+GS_StartPage])); GearScore_HideDatabase(); GearScore_DisplayDatabase("Search"); return; end
@@ -3099,157 +3387,6 @@ end
 
 if not GearScore_TimerFrame then GearScore_TimerFrame = CreateFrame("Frame") end
 
-function GearScoreCalculateEXP()
-	STable = nil
-	local STable = {}
-	local TotalPoints = 0
-	local count = 0
-	local SuperCount = 0
-	local StatString = ""
-	local id = 0
-	--local BackString = {}
-	for j = 1, 61 do
-		id = GetAchievementInfo(14823, j)
-		for i,v in pairs(GS_AchInfo) do
-			if v[id] then
-			 --   SuperCount = SuperCount + 1
-				count = GetComparisonStatistic(id);
-				if ( count == "--" ) then count = 0; end
-				if ( tonumber(count) > 5 ) then count = 5; end
-				STable[GS_BackString[id]] = count
-			end
-		end
-		--BackString[id] = SuperCount
-	end
-	for j = 1, 30 do
-		id = GetAchievementInfo(14963, j)
-		for i,v in pairs(GS_AchInfo) do
-			if v[id] then
-		--	SuperCount = SuperCount + 1
-				count = GetComparisonStatistic(id);
-				if ( count == "--" ) then count = 0; end
-				if ( tonumber(count) > 5 ) then count = 5; end
-				STable[GS_BackString[id]] = count
-			 end
-		end
-		--BackString[id] = SuperCount
-	end
-	for j = 15, 38 do
-		id = GetAchievementInfo(15021, j)
-		for i,v in pairs(GS_AchInfo) do
-			if v[id] then
-		--	SuperCount = SuperCount + 1
-				--print(count,i,v[id])
-				count = GetComparisonStatistic(id);
-				--print(count,i,v[id])
-                if ( count == "--" ) then count = 0; end
-				if ( tonumber(count) > 5 ) then count = 5; end
-    			STable[GS_BackString[id]] = count
-				--print(GS_BackString[id], count, id)
-		 	end
-		end
-    --BackString[id] = SuperCount
-	end
-
-	for j = 17, 68 do
-		id = GetAchievementInfo(15062, j)
-		for i,v in pairs(GS_AchInfo) do
-			if v[id] then
-		--	SuperCount = SuperCount + 1
-				--print(count,i,v[id])
-				count = GetComparisonStatistic(id);
-				--print(count,i,v[id])
-                if ( count == "--" ) then count = 0; end
-				if ( tonumber(count) > 5 ) then count = 5; end
-    			STable[GS_BackString[id]] = count
-				--print(GS_BackString[id], count, id)
-		 	end
-		end
-    --BackString[id] = SuperCount
-	end	
-	
-	
-	
-	
-	if GS_Settings["BackString"] then GS_Settings["BackString"] = nil; end
-	--GS_Settings["BackString"] = BackString
-	StatString = ""
-	for i,v in ipairs(STable) do
-		StatString = StatString..v
-	end
-	--print(StatString)
-	
-	--	if UnitName("target") then
-
-		    if not ( GS_Data[GetRealmName()]["CurrentPlayer"] ) then GS_Data[GetRealmName()]["CurrentPlayer"] = {}; end
-		    
-		--	if GS_Data[GetRealmName()].Players[UnitName("mouseover")] then
-   			   GS_Data[GetRealmName()]["CurrentPlayer"]["EXP"] = StatString
-				--SendAddonMessage("GSZZZ", StatString, "GUILD")
-				--SendAddonMessage("GSZZZ", StatString, "PARTY")
-	--		end
-	--	end
-
-end
-
-function GS_DisplayXP(Name)
-	--print("Displaying", Name)
-	GS_XpedName = Name
-	local StatTable = {}; --local RangeCheck = nil
-	StatTable, RangeCheck = GS_DecodeStats(Name)
-	local barcount = 0
-	if not StatTable  then print("OutofRange"); return; end
-	for i,v in ipairs(GS_InstanceOrder) do
-		local RangeCheck = nil
-	    if not (StatTable[v]) then StatTable[v] = 0; end
-		barcount = barcount + 1
-		local PPValue = (floor(( StatTable[v] / GS_AchMax[v] ) * 100 ))
-		local red,green,blue = 0,0,0
-		_G["GS_XpBar"..barcount]:SetValue(PPValue )
-
-		
-		if ( PPValue < 50 ) then  red, green, blue = 1,(PPValue / 50),(PPValue / 100); end
-		if ( PPValue >= 50 ) then red, green, blue = 1 - ((PPValue - 50) * 0.02), 1, 0.5 - ((PPValue - 50) * 0.01) ; end
-		_G["GS_XpBar"..barcount]:SetStatusBarColor(red, green, blue)		
-        _G["GS_XpBar"..barcount.."PercentText"]:SetText(PPValue .."%")
-        if not ( UnitName("target") ) then _G["GS_XpBar"..barcount.."PercentText"]:SetText("No Target"); end
-        --if ( RangeCheck ) then _G["GS_XpBar"..barcount.."PercentText"]:SetText("Out of Range / No target"); end
-		_G["GS_XpBar"..barcount.."InstaceText"]:SetText(v)
-	end
-end
-
-function GS_DecodeStats(Name)
-	--print("DecodingStats for ", Name)
-	local StatTable = {}
-	local count = 0; --local RangeCheck = nil
-	local StatString = ""
-	if not GS_Data[GetRealmName()]["CurrentPlayer"] then GS_Data[GetRealmName()]["CurrentPlayer"] = {}; end
-	if GS_Data[GetRealmName()].Players[Name] then
-	    if GS_Data[GetRealmName()]["CurrentPlayer"]["EXP"] then
-			StatString = GS_Data[GetRealmName()]["CurrentPlayer"]["EXP"]
-		else
-			for i = 1,114 do
-			StatString = StatString.."0"
-			end
-			--RangeCheck = true
-		end
-	end
-		for i,v in pairs(GS_BackString) do
-		    count = tonumber(string.sub(StatString, v, v))
-        	for j, w in pairs(GS_AchInfo) do
-				if w[i] then
-					StatTable[j] = (StatTable[j] or 0) + ( count or 0 );
-					--if not count then print(j, i, v); end
-					break;
-				end
-
-			end
-		end
-		return StatTable, RangeCheck
-end
-
-
-
 hooksecurefunc("SetItemRef",GearScoreSetItemRef)
 
 GearScore_TimerFrame:Hide()
@@ -3259,7 +3396,6 @@ f:SetScript("OnUpdate", GearScore_ThrottleUpdate)
 f:SetScript("OnEvent", GearScore_OnEvent);
 f:RegisterEvent("PLAYER_EQUIPMENT_CHANGED");
 f:RegisterEvent("CHAT_MSG_ADDON");
-f:RegisterEvent("INSPECT_ACHIEVEMENT_READY")
 f:RegisterEvent("PLAYER_TARGET_CHANGED")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -3293,6 +3429,8 @@ SLASH_MY3SCRIPT1 = "/gscan"
 SLASH_MY3SCRIPT2 = "/gsearch"
 SlashCmdList["GSTSETDEBUG"] = GS_TmogSetDebugToggle
 SLASH_GSTSETDEBUG1 = "/gstsetdebug"
+SlashCmdList["GSTSETREFRESH"] = GS_TmogSetRefresh
+SLASH_GSTSETREFRESH1 = "/gstsetrefresh"
 SlashCmdList["MY4SCRIPT"] = GS_BANSET
 SLASH_MY4SCRIPT1 = "/gsban"
 GS_DisplayFrame:Hide()
