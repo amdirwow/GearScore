@@ -128,7 +128,7 @@ function GearScore_OnEvent(GS_Nil, GS_EventName, GS_Prefix, GS_AddonMessage, GS_
 					if TestAuthenticity then return end
 					if ( UnitName("mouseover") == tbl[1] ) then GameTooltip:SetUnit(tbl[1]); end
 					if ( GS_DisplayPlayer == tbl[1] ) and ( GS_DisplayFrame:IsVisible() ) then GearScore_DisplayUnit(tbl[1], 1); end
-					if ( ( GS_Factions[GS_Data[GetRealmName()].Players[tbl[1]].Faction] ~= UnitFactionGroup("player") ) and ( GS_Settings["KeepFaction"] == -1 ) ) or ( ( GS_Data[GetRealmName()].Players[tbl[1]].Level < GS_Settings["MinLevel"] ) and ( tbl[1] ~= UnitName("player") ) ) then GS_Data[GetRealmName()].Players[tbl[1]] = nil; end
+					if ( GS_Factions[GS_Data[GetRealmName()].Players[tbl[1]].Faction] ~= UnitFactionGroup("player") ) and ( GS_Settings["KeepFaction"] == -1 ) then GS_Data[GetRealmName()].Players[tbl[1]] = nil; end
 					if ( (type(tonumber(tbl[10]))) == "number" ) then GS_Data[GetRealmName()].Players[tbl[1]] = nil; end
 					return
 				end
@@ -143,7 +143,7 @@ function GearScore_OnEvent(GS_Nil, GS_EventName, GS_Prefix, GS_AddonMessage, GS_
 					if TestAuthenticity then return end
 					local CurrentRecord = GS_Data[GetRealmName()].Players[tbl[1]]
 					if ( GS_DisplayPlayer == tbl[1] ) and ( GS_DisplayFrame:IsVisible() ) then GearScore_DisplayUnit(tbl[1], 1); end
-                    if ( ( GS_Factions[GS_Data[GetRealmName()].Players[tbl[1]].Faction] ~= UnitFactionGroup("player") ) and ( GS_Settings["KeepFaction"] == -1 ) ) or ( ( GS_Data[GetRealmName()].Players[tbl[1]].Level < GS_Settings["MinLevel"] ) and ( tbl[1] ~= UnitName("player") ) ) then GS_Data[GetRealmName()].Players[tbl[1]] = nil; end
+                    if ( GS_Factions[GS_Data[GetRealmName()].Players[tbl[1]].Faction] ~= UnitFactionGroup("player") ) and ( GS_Settings["KeepFaction"] == -1 ) then GS_Data[GetRealmName()].Players[tbl[1]] = nil; end
 					if ( (type(tonumber(tbl[10]))) == "number" ) then GS_Data[GetRealmName()].Players[tbl[1]] = nil; end
 					return
 				end
@@ -217,7 +217,7 @@ function GearScore_Prune()
 		--local time, monthago = GearScore_GetTimeStamp()
   		for i, v in pairs(GS_Data[GetRealmName()].Players) do 
 			--if ( tonumber(v.Level) < GS_Settings["MinLevel"] ) then GS_Data[GetRealmName()].Players[i] = nil; end;
-  			if ( v.Scanned ~= "Server" ) and ( ( ( GS_Factions[v.Faction] ~= UnitFactionGroup("player") ) and ( GS_Settings["KeepFaction"] == -1 ) ) or ( ( tonumber(v.Level) < GS_Settings["MinLevel"] ) and ( v.Name ~= UnitName("player") ) ) ) then GS_Data[GetRealmName()].Players[v.Name] = nil; end
+  			if ( v.Scanned ~= "Server" ) and ( ( GS_Factions[v.Faction] ~= UnitFactionGroup("player") ) and ( GS_Settings["KeepFaction"] == -1 ) ) then GS_Data[GetRealmName()].Players[v.Name] = nil; end
 			if not v.GearScore or not v.Name or not v.Sex or not v.Equip or not v.Location or not v.Level or not v.Faction or not v.Guild or not v.Race or not v.Class or not v.Date or not v.Average or not v.Scanned then GS_Data[GetRealmName()].Players[i] = nil; end
 			if ( string.find(v.Scanned, "<") ) then GS_Data[GetRealmName()].Players[v.Name] = nil; end
             if v.Guild == "<>" or v.Guild == "" then GS_Data[GetRealmName()].Players[v.Name].Guild = "*"; end
@@ -350,6 +350,7 @@ function GearScore_HasFreshServerRecord(Name)
 
 	local Record = GS_Data[GetRealmName()].Players[Name]
 	if not Record or Record.Scanned ~= "Server" or not Record.ServerCachedAt then return false; end
+	if Record.ServerPendingBuild then return false; end
 	if Record.ServerBridgeVersion ~= GS_ServerBridgeVersion then return false; end
 	local Age = GetTime() - Record.ServerCachedAt
 	return Age >= 0 and Age < GS_ServerCacheTTL
@@ -1283,6 +1284,10 @@ function GearScore_QueueServerRecordRetry(Name, Target, EquipCodes, ScanSource, 
 
 			for RetryName, RetryData in pairs(GS_ServerRetryQueue) do
 				if RetryData.Retries > 4 then
+					if GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[RetryName] then
+						GS_Data[GetRealmName()].Players[RetryName].ServerPendingBuild = nil
+					end
+					if ( GS_DisplayPlayer == RetryName ) and ( GS_DisplayFrame:IsVisible() ) then GearScore_DisplayUnit(RetryName, 1); end
 					GS_ServerRetryQueue[RetryName] = nil
 				else
 					if GearScore_BuildRecordFromItemCodes(RetryData.Name, RetryData.Target, RetryData.EquipCodes, RetryData.ScanSource, true, RetryData.ServerStats, RetryData.ServerMeta) then
@@ -1717,6 +1722,7 @@ function GearScore_SeedServerRecord(Name, Equip, ServerStats, ServerMeta, Server
 		["Stats"] = ServerStats or ExistingRecord.Stats,
 		["Sets"] = ServerSets or ExistingRecord.Sets,
 		["Sockets"] = ServerSockets or ExistingRecord.Sockets,
+		["ServerPendingBuild"] = 1,
 		["ServerBridgeVersion"] = GS_ServerBridgeVersion
 	}
 end
@@ -1818,22 +1824,15 @@ function GearScore_SetDisplayStats(Name, UnitToken)
 	end
 end
 
-function GearScore_BuildRecordFromItemCodes(Name, Target, EquipCodes, ScanSource, FromRetry, ServerStats, ServerMeta)
-	if not Name or not EquipCodes then return; end
+function GearScore_CalculateEquipScoreFromCodes(EquipCodes, PlayerEnglishClass)
+	if not EquipCodes then return 0, 0, {}, 0; end
 
-	if not Target then Target = GearScore_GetUnitTokenByName(Name); end
-	local ExistingRecord = nil
-	if GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players then ExistingRecord = GS_Data[GetRealmName()].Players[Name]; end
-
-	local GearScore = 0; local ItemCount = 0; local LevelTotal = 0; local TitanGrip = 1; local TempEquip = {}
+	local GearScore = 0
+	local ItemCount = 0
+	local LevelTotal = 0
+	local TitanGrip = 1
+	local TempEquip = {}
 	local MissingItems = 0
-	local PlayerEnglishClass = nil
-	if Target and UnitExists(Target) and UnitIsPlayer(Target) then
-		local PlayerClass = nil
-		PlayerClass, PlayerEnglishClass = UnitClass(Target)
-	elseif ExistingRecord and ExistingRecord.Class then
-		PlayerEnglishClass = GS_Classes[ExistingRecord.Class]
-	end
 
 	local MainHandLink = GearScore_GetItemLinkFromCode(EquipCodes[16])
 	local OffHandLink = GearScore_GetItemLinkFromCode(EquipCodes[17])
@@ -1876,12 +1875,38 @@ function GearScore_BuildRecordFromItemCodes(Name, Target, EquipCodes, ScanSource
 	end
 	TempEquip[4] = "0:0"
 
+	local Average = 0
+	if ItemCount > 0 then Average = floor((LevelTotal / ItemCount) + 0.5); end
+	if GearScore < 0 then GearScore = 0; end
+	return floor(GearScore), Average, TempEquip, MissingItems
+end
+
+function GearScore_BuildRecordFromItemCodes(Name, Target, EquipCodes, ScanSource, FromRetry, ServerStats, ServerMeta)
+	if not Name or not EquipCodes then return; end
+
+	if not Target then Target = GearScore_GetUnitTokenByName(Name); end
+	local ExistingRecord = nil
+	if GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players then ExistingRecord = GS_Data[GetRealmName()].Players[Name]; end
+
+	local PlayerEnglishClass = nil
+	if Target and UnitExists(Target) and UnitIsPlayer(Target) then
+		local PlayerClass = nil
+		PlayerClass, PlayerEnglishClass = UnitClass(Target)
+	elseif ExistingRecord and ExistingRecord.Class then
+		PlayerEnglishClass = GS_Classes[ExistingRecord.Class]
+	end
+
+	local GearScore, Average, TempEquip, MissingItems = GearScore_CalculateEquipScoreFromCodes(EquipCodes, PlayerEnglishClass)
+
 	if MissingItems > 0 then
+		if ExistingRecord and ExistingRecord.Scanned == "Server" then
+			ExistingRecord.ServerPendingBuild = 1
+		end
 		GearScore_QueueServerRecordRetry(Name, Target, EquipCodes, ScanSource, ServerStats, ServerMeta)
 		return nil
 	end
 
-	if not ( GearScore > 0 ) then return; end
+	if GearScore < 0 then GearScore = 0; end
 
 	local RaceEnglish = nil; local ClassEnglish = nil; local currentzone = "Unknown Location"; local GuildName = "*"; local Level = 0; local Faction = nil; local Sex = 1
 	if Target and UnitExists(Target) and UnitIsPlayer(Target) then
@@ -1914,7 +1939,10 @@ function GearScore_BuildRecordFromItemCodes(Name, Target, EquipCodes, ScanSource
 
 	if not RaceEnglish or not ClassEnglish or not Level or not Faction then return; end
 	GS_Data[GetRealmName()].Players[Name] = { ["Name"] = Name, ["GearScore"] = floor(GearScore), ["PVP"] = 1, ["Level"] = Level, ["Faction"] = Faction, ["Sex"] = Sex, ["Guild"] = GuildName,
-	["Race"] = GS_Races[RaceEnglish], ["Class"] =  GS_Classes[ClassEnglish], ["Spec"] = 1, ["Location"] = currentzone, ["Scanned"] = ScanSource or "Server", ["Date"] = GearScore_GetTimeStamp(), ["Average"] = floor((LevelTotal / ItemCount)+0.5), ["Equip"] = TempEquip, ["ServerCachedAt"] = GetTime(), ["Stats"] = ServerStats or (ExistingRecord and ExistingRecord.Stats), ["Sets"] = ExistingRecord and ExistingRecord.Sets, ["Sockets"] = ExistingRecord and ExistingRecord.Sockets, ["ServerBridgeVersion"] = GS_ServerBridgeVersion}
+	["Race"] = GS_Races[RaceEnglish], ["Class"] =  GS_Classes[ClassEnglish], ["Spec"] = 1, ["Location"] = currentzone, ["Scanned"] = ScanSource or "Server", ["Date"] = GearScore_GetTimeStamp(), ["Average"] = Average, ["Equip"] = TempEquip, ["ServerCachedAt"] = GetTime(), ["Stats"] = ServerStats or (ExistingRecord and ExistingRecord.Stats), ["Sets"] = ExistingRecord and ExistingRecord.Sets, ["Sockets"] = ExistingRecord and ExistingRecord.Sockets, ["ServerBridgeVersion"] = GS_ServerBridgeVersion}
+	if GS_Data[GetRealmName()].Players[Name] then
+		GS_Data[GetRealmName()].Players[Name].ServerPendingBuild = nil
+	end
 	return true
 end
 
@@ -2071,7 +2099,13 @@ end
 
 function GearScore_ShouldWaitForServerRecord(Name, UnitToken)
 	if not Name or Name == UnitName("player") then return false; end
-	if GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[Name] then return false; end
+	if GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[Name] then
+		local Record = GS_Data[GetRealmName()].Players[Name]
+		if Record and Record.Scanned == "Server" and (Record.ServerPendingBuild and Record.ServerPendingBuild ~= 0) then
+			return true
+		end
+		return false
+	end
 	if GearScore_HasFreshServerRecord(Name) or GearScore_HasSelfReportedRecord(Name) then return false; end
 	if UnitToken and UnitExists(UnitToken) and UnitIsPlayer(UnitToken) then return true; end
 	return true
@@ -2276,6 +2310,7 @@ function GearScore_GetItemScore(ItemLink)
             GearScore = floor(((ItemLevel - Table[ItemRarity].A) / Table[ItemRarity].B) * GS_ItemTypes[ItemEquipLoc].SlotMOD * Scale * QualityScale)
 			if ( ItemLevel == 187.05 ) then ItemLevel = 0; end
 			if ( GearScore < 0 ) then GearScore = 0;   Red, Green, Blue = GearScore_GetQuality(1); end
+			if ( ItemLevel and ItemLevel > 0 ) and ( GearScore < 1 ) then GearScore = 1; end
 			GearScoreTooltip:SetOwner(GS_Frame1, "ANCHOR_Right")
 			if ( PVPScale == 0.75 ) then PVPScore = 1; GearScore = GearScore * 1; 
 			else PVPScore = GearScore * 0; end
@@ -2920,6 +2955,13 @@ function GearScore_DisplayUnit(Name, Auto)
 		end
 	end
 
+	local Record = GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[Name]
+	if Record and Record.Scanned == "Server" and Record.Equip and ((Record.ServerPendingBuild and Record.ServerPendingBuild ~= 0) or not Record.GearScore or Record.GearScore <= 0) then
+		if GearScore_BuildRecordFromItemCodes(Name, UnitToken, Record.Equip, "Server", true, Record.Stats) then
+			Record = GS_Data[GetRealmName()].Players[Name]
+		end
+	end
+
 	if GearScore_ShouldWaitForServerRecord(Name, UnitToken) then
 		GS_InfoText:SetText("")
 		GS_NameText:SetText(Name)
@@ -2930,8 +2972,44 @@ function GearScore_DisplayUnit(Name, Auto)
 		GS_GearScoreText:SetText("Очікування даних...")
 		GearScore_StartProfileNotFoundTimer(Name)
 		GearScore_SetDisplayStats(Name, UnitToken)
-		local backdrop = {}
-		for i = 1, 18 do if ( i ~=4 ) then backdrop = { bgFile = GS_TextureFiles[i] }; _G["GS_Frame"..i]:SetBackdrop(backdrop); end; end
+		local PendingRecord = GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[Name]
+		if PendingRecord and PendingRecord.Equip then
+			local DisplayRace = GearScore_GetRecordDisplayRace(PendingRecord)
+			local DisplayClass = GearScore_GetRecordDisplayClass(PendingRecord)
+			local ClassRed, ClassGreen, ClassBlue = GearScore_GetRecordClassColors(PendingRecord)
+			local PendingClass = GS_Classes[PendingRecord.Class] or DisplayClass
+			local PendingScore, PendingAverage, PendingEquip, PendingMissingItems = GearScore_CalculateEquipScoreFromCodes(PendingRecord.Equip, PendingClass)
+			GS_InfoText:SetText((PendingRecord.Level or "").." "..DisplayRace.." "..DisplayClass)
+			GS_InfoText:SetTextColor(ClassRed, ClassGreen, ClassBlue, 1)
+			GS_NameText:SetText(PendingRecord.Name or Name)
+			GS_NameText:SetTextColor(ClassRed, ClassGreen, ClassBlue, 1)
+			GS_GuildText:SetTextColor(ClassRed, ClassGreen, ClassBlue, 1)
+			GS_GuildText:SetText(PendingRecord.Guild or "")
+			if PendingScore > 0 then
+				local Red, Green, Blue = GearScore_GetQuality(PendingScore)
+				if PendingMissingItems > 0 then
+					GS_GearScoreText:SetText("GearScore: "..PendingScore.."+")
+				else
+					GS_GearScoreText:SetText("GearScore: "..PendingScore)
+				end
+				GS_GearScoreText:SetTextColor(Red, Blue, Green)
+				GS_AverageText:SetText("Сер. рівень речей:|cFFFFFFFF "..(PendingAverage or "-"))
+			else
+				GS_AverageText:SetText("Сер. рівень речей:|cFFFFFFFF "..(PendingRecord.Average or "-"))
+			end
+			GS_LocationText:SetText(GS_Zones[PendingRecord.Location] or PendingRecord.Location or "")
+			for i = 1, 18 do
+				if ( i ~= 4 ) then
+					local backdrop = {}
+					local ItemName, ItemLink, ItemRarity, ItemLevel, ItemMinLevel, ItemType, ItemSubType, ItemStackCount, ItemEquipLoc, ItemTexture = GetItemInfo("item:"..PendingRecord.Equip[i])
+					if ( ItemLink ) then GS_Model:TryOn(ItemLink); end
+					if ( ItemTexture ) then backdrop = { bgFile = ItemTexture }; _G["GS_Frame"..i]:SetBackdrop(backdrop); else backdrop = { bgFile = GS_TextureFiles[i] }; _G["GS_Frame"..i]:SetBackdrop(backdrop); end
+				end
+			end
+		else
+			local backdrop = {}
+			for i = 1, 18 do if ( i ~=4 ) then backdrop = { bgFile = GS_TextureFiles[i] }; _G["GS_Frame"..i]:SetBackdrop(backdrop); end; end
+		end
 	elseif ( GS_Data[GetRealmName()].Players[Name] ) then
 		local Record = GS_Data[GetRealmName()].Players[Name]
 		if Record.Scanned == "Server" and (not Record.GearScore or Record.GearScore <= 0) and Record.Equip then
