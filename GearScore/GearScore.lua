@@ -2165,21 +2165,26 @@ function GearScore_GetScore(Name, Target)
 	if ( UnitIsPlayer(Target) ) then
 	    local ExistingRecord = GS_Data and GS_Data[GetRealmName()] and GS_Data[GetRealmName()].Players and GS_Data[GetRealmName()].Players[Name]
 	    local PlayerClass, PlayerEnglishClass = UnitClass(Target);
-		local GearScore = 0; local PVPScore = 0; local ItemCount = 0; local LevelTotal = 0; local TitanGrip = 1; local TempEquip = {}; local TempPVPScore = 0
+		local GearScore = 0; local PVPScore = 0; local ItemCount = 0; local LevelTotal = 0; local TitanGrip = 1; local TempEquip = {}; local TempPVPScore = 0; local MissingItemData = 0
 
 		if ( GetInventoryItemLink(Target, 16) ) and ( GetInventoryItemLink(Target, 17) ) then
       		local ItemName, ItemLink, ItemRarity, ItemLevel, ItemMinLevel, ItemType, ItemSubType, ItemStackCount, ItemEquipLoc, ItemTexture = GetItemInfo(GetInventoryItemLink(Target, 16))
+            if not ItemLink then MissingItemData = MissingItemData + 1; end
             local TitanGripGuess = 0
             if ( ItemEquipLoc == "INVTYPE_2HWEAPON" ) then TitanGrip = 0.5; end
 		end
 
-		if ( GetInventoryItemLink(Target, 17) ) then
-			local ItemName, ItemLink, ItemRarity, ItemLevel, ItemMinLevel, ItemType, ItemSubType, ItemStackCount, ItemEquipLoc, ItemTexture = GetItemInfo(GetInventoryItemLink(Target, 17))
+		local OffHandLink = GetInventoryItemLink(Target, 17)
+		if ( OffHandLink ) then
+			local ItemName, ItemLink, ItemRarity, ItemLevel, ItemMinLevel, ItemType, ItemSubType, ItemStackCount, ItemEquipLoc, ItemTexture = GetItemInfo(OffHandLink)
+			local TempScore = 0
+			local ScoredItemLevel = 0
+			if not ItemLink then MissingItemData = MissingItemData + 1; end
 			if ( ItemEquipLoc == "INVTYPE_2HWEAPON" ) then TitanGrip = 0.5; end
-			TempScore, ItemLevel = GearScore_GetItemScore(GetInventoryItemLink(Target, 17));
+			TempScore, ScoredItemLevel = GearScore_GetItemScore(OffHandLink);
 			if ( PlayerEnglishClass == "HUNTER" ) then TempScore = TempScore * 0.3164; end
-			GearScore = GearScore + TempScore * TitanGrip;	ItemCount = ItemCount + 1; LevelTotal = LevelTotal + ItemLevel
-            TempEquip[17] = GearScore_GetItemCode(ItemLink)
+			GearScore = GearScore + TempScore * TitanGrip;	ItemCount = ItemCount + 1; LevelTotal = LevelTotal + (ScoredItemLevel or 0)
+            TempEquip[17] = GearScore_GetItemCode(OffHandLink)
 		else
       		TempEquip[17] = "0:0"
 		end
@@ -2187,20 +2192,26 @@ function GearScore_GetScore(Name, Target)
 		for i = 1, 18 do
 
 			if ( i ~= 4 ) and ( i ~= 17 ) then
-        		ItemLink = GetInventoryItemLink(Target, i)
-				if ( ItemLink ) then
-        			local ItemName, ItemLink, ItemRarity, ItemLevel, ItemMinLevel, ItemType, ItemSubType, ItemStackCount, ItemEquipLoc, ItemTexture = GetItemInfo(ItemLink)
-     				TempScore, ItemLevel, a, b, c, d, TempPVPScore = GearScore_GetItemScore(ItemLink);
+        		local InventoryLink = GetInventoryItemLink(Target, i)
+				if ( InventoryLink ) then
+        			local ItemName, ItemLink, ItemRarity, ItemLevel, ItemMinLevel, ItemType, ItemSubType, ItemStackCount, ItemEquipLoc, ItemTexture = GetItemInfo(InventoryLink)
+					local TempScore = 0
+					local ScoredItemLevel = 0
+                    if not ItemLink then MissingItemData = MissingItemData + 1; end
+     				TempScore, ScoredItemLevel, a, b, c, d, TempPVPScore = GearScore_GetItemScore(InventoryLink);
 					if ( i == 16 ) and ( PlayerEnglishClass == "HUNTER" ) then TempScore = TempScore * 0.3164; end
 					if ( i == 18 ) and ( PlayerEnglishClass == "HUNTER" ) then TempScore = TempScore * 5.3224; end
 					if ( i == 16 ) then TempScore = TempScore * TitanGrip; end
-					GearScore = GearScore + TempScore;	ItemCount = ItemCount + 1; LevelTotal = LevelTotal + ItemLevel
+					GearScore = GearScore + TempScore;	ItemCount = ItemCount + 1; LevelTotal = LevelTotal + (ScoredItemLevel or 0)
 					--PVPScore = PVPScore + TempPVPScore
-     				TempEquip[i] = GearScore_GetItemCode(ItemLink)
+     				TempEquip[i] = GearScore_GetItemCode(InventoryLink)
 				else
 				    TempEquip[i] = "0:0"
 				end
 			end;
+		end
+		if ( MissingItemData > 0 ) and ExistingRecord and ExistingRecord.GearScore and ExistingRecord.GearScore > 0 then
+			return;
 		end
 		if ( GearScore <= 0 ) and ( Name ~= UnitName("player") ) then
 			GearScore = 0; return;
@@ -2220,8 +2231,10 @@ function GearScore_GetScore(Name, Target)
         local GuildName = GetGuildInfo(Target); if not ( GuildName ) then GuildName = "*"; else GuildName = GuildName; end
 		local KeepServerFields = ExistingRecord and ExistingRecord.ServerBridgeVersion == GS_ServerBridgeVersion and GearScore_EquipCodesMatch(ExistingRecord.Equip, TempEquip)
 		GearScore_TransmogSetDebug("local score preserve server fields name="..tostring(Name).." keep="..tostring(KeepServerFields).." oldSource="..tostring(ExistingRecord and ExistingRecord.Scanned))
+		local Average = 0
+		if ItemCount > 0 then Average = floor((LevelTotal / ItemCount)+0.5); end
 		GS_Data[GetRealmName()].Players[Name] = { ["Name"] = Name, ["GearScore"] = floor(GearScore), ["PVP"] = 1, ["Level"] = UnitLevel(Target), ["Faction"] = GS_Factions[UnitFactionGroup(Target)], ["Sex"] = UnitSex(Target), ["Guild"] = GuildName,
-        ["Race"] = GS_Races[RaceEnglish], ["Class"] =  GS_Classes[ClassEnglish], ["Spec"] = 1, ["Location"] = GS_Zones[currentzone], ["Scanned"] = UnitName("player"), ["Date"] = GearScore_GetTimeStamp(), ["Average"] = floor((LevelTotal / ItemCount)+0.5), ["Equip"] = TempEquip,
+        ["Race"] = GS_Races[RaceEnglish], ["Class"] =  GS_Classes[ClassEnglish], ["Spec"] = 1, ["Location"] = GS_Zones[currentzone], ["Scanned"] = UnitName("player"), ["Date"] = GearScore_GetTimeStamp(), ["Average"] = Average, ["Equip"] = TempEquip,
 		["Stats"] = KeepServerFields and ExistingRecord.Stats or nil, ["Sets"] = KeepServerFields and ExistingRecord.Sets or nil, ["Sockets"] = KeepServerFields and ExistingRecord.Sockets or nil, ["ServerCachedAt"] = KeepServerFields and ExistingRecord.ServerCachedAt or nil, ["ServerBridgeVersion"] = KeepServerFields and ExistingRecord.ServerBridgeVersion or nil}
 	end
 end
@@ -2297,6 +2310,7 @@ function GearScore_GetItemScore(ItemLink)
 	local QualityScale = 1; local PVPScale = 1; local PVPScore = 0; local GearScore = 0
 	if not ( ItemLink ) then return 0, 0; end
 	local ItemName, ItemLink, ItemRarity, ItemLevel, ItemMinLevel, ItemType, ItemSubType, ItemStackCount, ItemEquipLoc, ItemTexture = GetItemInfo(ItemLink); local Table = {}; local Scale = 1.8618
+	if not ItemRarity or not ItemLevel or not ItemEquipLoc then return 0, 0, 50, 1, 1, 1, 0, ItemEquipLoc; end
  	if ( ItemRarity == 5 ) then QualityScale = 1.3; ItemRarity = 4;
 	elseif ( ItemRarity == 1 ) then QualityScale = 0.005;  ItemRarity = 2
 	elseif ( ItemRarity == 0 ) then QualityScale = 0.005;  ItemRarity = 2 end
