@@ -469,6 +469,20 @@
 				</Texture>
 			</Layer>
 			<Layer level="OVERLAY">
+				<FontString name="GS_ModelUnavailableText" inherits="GameFontNormalLarge" text="Персонаж офлайн" justifyH="CENTER" justifyV="MIDDLE">
+					<Size>
+						<AbsDimension x="180" y="48" />
+					</Size>
+					<Anchors>
+						<Anchor point="CENTER" relativeTo="GS_DisplayFrame" relativePoint="TOPLEFT">
+							<Offset x="399" y="-195" />
+						</Anchor>
+					</Anchors>
+					<FontHeight>
+						<AbsValue val="16" />
+					</FontHeight>
+					<Color r="1" g="0.82" b="0" />
+				</FontString>
 				<FontString name="GS_ServerStatsTitle" inherits="GameFontNormalSmall" text="Точні характеристики">
 					<Size>
 						<AbsDimension x="190" y="22" />
@@ -733,8 +747,8 @@
 			<CheckButton name="GS_Heavy" inherits="UICheckButtonTemplate" text="CheckButton2">
 				<Scripts>
 					<OnClick>
-						GS_Light:SetChecked(Flase)
-						GS_None:SetChecked(Flase)
+						GS_Light:SetChecked(false)
+						GS_None:SetChecked(false)
 						if not ( GS_Heavy:GetChecked() ) then GS_Heavy:SetChecked(true); end												
 					</OnClick>
 					<OnEnter>
@@ -762,8 +776,8 @@
 			<CheckButton name="GS_None" inherits="UICheckButtonTemplate" text="CheckButton4">
 				<Scripts>
 					<OnClick>
-						GS_Light:SetChecked(Flase)
-						GS_Heavy:SetChecked(Flase)
+						GS_Light:SetChecked(false)
+						GS_Heavy:SetChecked(false)
 						if not ( GS_None:GetChecked() ) then GS_None:SetChecked(true); end												
 					</OnClick>
 					<OnEnter>
@@ -792,8 +806,8 @@
 			<CheckButton name="GS_Light" inherits="UICheckButtonTemplate" text="CheckButton5">
 				<Scripts>
 					<OnClick>
-						GS_Heavy:SetChecked(Flase)
-						GS_None:SetChecked(Flase)	
+						GS_Heavy:SetChecked(false)
+						GS_None:SetChecked(false)
 						if not ( GS_Light:GetChecked() ) then GS_Light:SetChecked(true); end
 					</OnClick>
 					<OnEnter>
