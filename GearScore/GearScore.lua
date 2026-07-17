@@ -1397,9 +1397,10 @@ function GearScore_FixTransmogSetTooltip(Tooltip, UnitToken, Slot)
 	local VisibleItemName, VisibleItemLink = Tooltip:GetItem()
 	local VisibleItemCode, VisibleItemId = GearScore_GetItemCode(VisibleItemLink)
 	local RealItemId = GearScore_ItemCodeEntry(RealItemCode)
-	if VisibleItemId and RealItemId and tostring(VisibleItemId) ~= tostring(RealItemId) then
+	if RealItemId and (not VisibleItemId or tostring(VisibleItemId) ~= tostring(RealItemId)) then
 		-- Transmog can make SetInventoryItem build the tooltip from the appearance item.
-		-- Rebuild it from the actual equipped item before correcting set counts/bonuses.
+		-- Some 3.3.5 clients also expose only the item name here, without an item link.
+		-- Rebuild both cases from the actual equipped item before correcting set data.
 		GearScore_TransmogSetDebug("replace visible item "..tostring(VisibleItemId).." with real item "..tostring(RealItemId).." in slot "..tostring(Slot))
 		Tooltip:ClearLines()
 		Tooltip:SetHyperlink("item:"..RealItemCode)
@@ -2894,11 +2895,54 @@ function GearScore_OnEnter(Tooltip, UnitToken, ItemSlot, Argument)
 	end
 	local TooltipItemName, TooltipItemLink = (Tooltip or GameTooltip):GetItem()
 	local TooltipItemCode, TooltipItemId = GearScore_GetItemCode(TooltipItemLink)
-	if not TooltipItemId then return; end
 	GearScore_TransmogSetDebug("SetInventoryItem unit="..tostring(UnitToken).." resolved="..tostring(ResolvedUnit).." slot="..tostring(ItemSlot).." focus="..tostring(FocusName).."#"..tostring(FocusId).." item="..tostring(TooltipItemId))
 	if ResolvedUnit and ItemSlot then
 		GS_LastInventoryTooltip = { ["Name"] = UnitName(ResolvedUnit), ["UnitToken"] = ResolvedUnit, ["Slot"] = ItemSlot, ["Time"] = GetTime() }
 		GearScore_FixTransmogSetTooltip(Tooltip or GameTooltip, ResolvedUnit, ItemSlot)
+	end
+end
+
+-- SetInventoryItem's secure hook is not reliably the last tooltip handler on
+-- every 3.3.5 client. Hook the default character equipment buttons as well so
+-- the correction runs after Blizzard has finished building the visible tooltip.
+local GS_DefaultPaperDollSlotFrames = {
+	"CharacterHeadSlot",
+	"CharacterNeckSlot",
+	"CharacterShoulderSlot",
+	"CharacterChestSlot",
+	"CharacterWaistSlot",
+	"CharacterLegsSlot",
+	"CharacterFeetSlot",
+	"CharacterWristSlot",
+	"CharacterHandsSlot",
+	"CharacterFinger0Slot",
+	"CharacterFinger1Slot",
+	"CharacterTrinket0Slot",
+	"CharacterTrinket1Slot",
+	"CharacterBackSlot",
+	"CharacterMainHandSlot",
+	"CharacterSecondaryHandSlot",
+	"CharacterRangedSlot",
+}
+
+function GearScore_DefaultPaperDollItemOnEnter(Frame)
+	local Slot = Frame and Frame.GetID and Frame:GetID()
+	if not Slot or Slot == 4 then return; end
+	GearScore_FixTransmogSetTooltip(GameTooltip, "player", Slot)
+end
+
+function GearScore_HookDefaultPaperDollTooltips()
+	if GS_DefaultPaperDollTooltipsHooked then return; end
+	local Hooked = 0
+	for _, FrameName in ipairs(GS_DefaultPaperDollSlotFrames) do
+		local Frame = _G[FrameName]
+		if Frame then
+			Frame:HookScript("OnEnter", GearScore_DefaultPaperDollItemOnEnter)
+			Hooked = Hooked + 1
+		end
+	end
+	if Hooked > 0 then
+		GS_DefaultPaperDollTooltipsHooked = 1
 	end
 end
 
@@ -2997,6 +3041,7 @@ function GS_TmogSetRefresh(Command)
 end
 
 function MyPaperDoll()
+	GearScore_HookDefaultPaperDollTooltips()
 	GearScore_GetScore(UnitName("player"), "player"); GearScore_RequestSelfServerItemData(1); GearScore_Send(UnitName("player"), "ALL"); 
 	--SendAddonMessage( "GSY_Version", GS_Settings["OldVer"], "GUILD")
 	local Red, Blue, Green = GearScore_GetQuality(GS_Data[GetRealmName()].Players[UnitName("player")].GearScore)
@@ -3694,6 +3739,7 @@ GameTooltip:HookScript("OnTooltipSetItem", GearScore_HookSetItem)
 ShoppingTooltip1:HookScript("OnTooltipSetItem", GearScore_HookCompareItem)
 ShoppingTooltip2:HookScript("OnTooltipSetItem", GearScore_HookCompareItem2)
 PaperDollFrame:HookScript("OnShow", MyPaperDoll)
+GearScore_HookDefaultPaperDollTooltips()
 PaperDollFrame:CreateFontString("PersonalGearScore")
 PersonalGearScore:SetFont("Fonts\\FRIZQT__.TTF", 10)
 PersonalGearScore:SetText("GS: 0")
