@@ -1341,6 +1341,10 @@ end
 
 function GearScore_FixTransmogSetTooltip(Tooltip, UnitToken, Slot)
 	if not Tooltip or not UnitToken or not Slot then return; end
+	Slot = tonumber(Slot)
+	-- SetInventoryItem is also used by the main bank slots (39+). Never let a
+	-- bank/container button ID fall through to Record.Equip.
+	if not Slot or Slot < 1 or Slot > 18 or Slot == 4 then return; end
 	if not UnitExists(UnitToken) or not UnitIsPlayer(UnitToken) then return; end
 
 	local Name = UnitName(UnitToken)
@@ -1384,23 +1388,14 @@ function GearScore_FixTransmogSetTooltip(Tooltip, UnitToken, Slot)
 	end
 
 	local RealItemCode = Record.Equip[Slot]
-	if (not RealItemCode or RealItemCode == "0:0") and GetMouseFocus then
-		local Focus = GetMouseFocus()
-		local FocusId = Focus and Focus.GetID and Focus:GetID()
-		if FocusId and FocusId ~= Slot and Record.Equip[FocusId] and Record.Equip[FocusId] ~= "0:0" then
-			GearScore_TransmogSetDebug("slot fallback "..tostring(Slot).." -> focus id "..tostring(FocusId))
-			Slot = FocusId
-			RealItemCode = Record.Equip[Slot]
-		end
-	end
 	if not RealItemCode or RealItemCode == "0:0" then return; end
 	local VisibleItemName, VisibleItemLink = Tooltip:GetItem()
 	local VisibleItemCode, VisibleItemId = GearScore_GetItemCode(VisibleItemLink)
 	local RealItemId = GearScore_ItemCodeEntry(RealItemCode)
-	if RealItemId and (not VisibleItemId or tostring(VisibleItemId) ~= tostring(RealItemId)) then
-		-- Transmog can make SetInventoryItem build the tooltip from the appearance item.
-		-- Some 3.3.5 clients also expose only the item name here, without an item link.
-		-- Rebuild both cases from the actual equipped item before correcting set data.
+	if RealItemId then
+		-- The transmog core can keep the real GetItem() ID while injecting the
+		-- appearance item's set block. Comparing IDs is therefore not sufficient:
+		-- always rebuild an equipment tooltip from the real equipped item code.
 		GearScore_TransmogSetDebug("replace visible item "..tostring(VisibleItemId).." with real item "..tostring(RealItemId).." in slot "..tostring(Slot))
 		Tooltip:ClearLines()
 		Tooltip:SetHyperlink("item:"..RealItemCode)
@@ -2882,6 +2877,10 @@ function GearScore_HookItem(ItemName, ItemLink, Tooltip)
     end
 end
 function GearScore_OnEnter(Tooltip, UnitToken, ItemSlot, Argument)
+	ItemSlot = tonumber(ItemSlot)
+	if not ItemSlot or ItemSlot < 1 or ItemSlot > 18 or ItemSlot == 4 then
+		return
+	end
 	local ResolvedUnit = UnitToken
 	if not (ResolvedUnit and UnitExists(ResolvedUnit) and UnitIsPlayer(ResolvedUnit)) then
 		return
