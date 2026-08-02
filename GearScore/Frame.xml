@@ -615,7 +615,7 @@
 						PanelTemplates_SetTab(GS_DisplayFrame, 2)
 						GS_GearFrame:Hide(); GS_DefaultFrame:Hide()
 						if ( GS_OptionsFrame:IsVisible() ) then GearScore_HideOptions(); end
-						GearScore_DisplayDatabase(GS_DisplayedGroup or "Guild", GS_SortedType or "GearScore", 1, GS_StartPage or 0)
+						GearScore_DisplayDatabase(GS_DisplayedGroup or "Party", GS_SortedType or "GearScore", 1, GS_StartPage or 0)
 					</OnClick>
 				</Scripts>
 
@@ -1409,19 +1409,19 @@
 	            </Button>
 			<Button name="$parentTab1" inherits="CharacterFrameTabButtonTemplate" id="1" text="Група">
 				<Anchors><Anchor point="TOPLEFT"><Offset x="0" y="-464" /></Anchor></Anchors>
-				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("Party", SortType); PanelTemplates_SetTab(GS_DatabaseFrame, 1)</OnClick></Scripts>
+				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("Party", GS_SortedType or "GearScore")</OnClick></Scripts>
 			</Button>
 			<Button name="$parentTab2" inherits="CharacterFrameTabButtonTemplate" id="2" text="Гільдія">
 				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_DatabaseFrameTab1" relativePoint="TOPRIGHT"><Offset x="-14" y="" /></Anchor></Anchors>
-				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("Guild", SortType); PanelTemplates_SetTab(GS_DatabaseFrame, 2)</OnClick></Scripts>
+				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("Guild", GS_SortedType or "GearScore")</OnClick></Scripts>
 			</Button>
 			<Button name="$parentTab3" inherits="CharacterFrameTabButtonTemplate" id="3" text="Друзі">
 				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_DatabaseFrameTab2" relativePoint="TOPRIGHT"><Offset x="-14" y="" /></Anchor></Anchors>
-				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("Friends", SortType); PanelTemplates_SetTab(GS_DatabaseFrame, 3)</OnClick></Scripts>
+				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("Friends", GS_SortedType or "GearScore")</OnClick></Scripts>
 			</Button>
 			<Button name="$parentTab4" inherits="CharacterFrameTabButtonTemplate" id="4" text="Усі">
 				<Anchors><Anchor point="TOPLEFT" relativeTo="GS_DatabaseFrameTab3" relativePoint="TOPRIGHT"><Offset x="-14" y="" /></Anchor></Anchors>
-				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("All", SortType); PanelTemplates_SetTab(GS_DatabaseFrame, 4)</OnClick></Scripts>
+				<Scripts><OnClick>GearScore_HideDatabase(); GearScore_DisplayDatabase("All", GS_SortedType or "GearScore")</OnClick></Scripts>
 			</Button>
 
 		
@@ -1461,7 +1461,7 @@
 				<Anchors><Anchor point="BOTTOMRIGHT"><Offset x="-175" y="15" /></Anchor></Anchors>
 				<Scripts><OnClick>GearScore_RunDatabaseSearch("GearScore")</OnClick></Scripts>
 			</Button>							
- 			<Button name="GS_Search2Button" inherits="UIPanelButtonTemplate" text="Звіт">
+			<Button name="GS_ReportButton" inherits="UIPanelButtonTemplate" text="Звіт">
 				<Size><AbsDimension x="75" y="23" /></Size>
 				<Anchors><Anchor point="BOTTOMRIGHT"><Offset x="-95" y="15" /></Anchor></Anchors>
 				<Scripts><OnClick>GearScore_ShowReport()</OnClick></Scripts>

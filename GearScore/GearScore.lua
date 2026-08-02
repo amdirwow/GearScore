@@ -41,6 +41,18 @@ function GearScore_OnEvent(GS_Nil, GS_EventName, GS_Prefix, GS_AddonMessage, GS_
 		end
 		return
 	end
+	if ( GS_EventName == "PARTY_MEMBERS_CHANGED" or GS_EventName == "RAID_ROSTER_UPDATE" ) then
+		if GS_DisplayedGroup == "Party" and GS_DatabaseFrame and GS_DatabaseFrame:IsVisible() then
+			GearScore_DisplayDatabase("Party", GS_SortedType or "GearScore", 1, GS_StartPage or 0)
+		end
+		return
+	end
+	if ( GS_EventName == "FRIENDLIST_UPDATE" ) then
+		if GS_DisplayedGroup == "Friends" and GS_DatabaseFrame and GS_DatabaseFrame:IsVisible() then
+			GearScore_DisplayDatabase("Friends", GS_SortedType or "GearScore", 1, GS_StartPage or 0)
+		end
+		return
+	end
 	if ( GS_EventName == "PLAYER_REGEN_ENABLED" ) then GS_PlayerIsInCombat = false; return; end
 	if ( GS_EventName == "PLAYER_REGEN_DISABLED" ) then GS_PlayerIsInCombat = true; return; end
 	if ( GS_EventName == "EQUIPMENT_SWAP_PENDING" ) then GS_PlayerIsSwitchingGear = true; GS_PlayerSwappedGear = 0 return; end
@@ -3437,14 +3449,14 @@ end
 function GearScore_DisplayDatabase(Group, SortType, Auto, GSX_StartPage)
 	--GS_HighlightedColNum = 1
 	if not ( Group ) then Group = "Party"; end
-	if GS_DisplayedGroup and GS_DisplayedGroup ~= Group then
-		GSX_DataBase = nil
-	end
+	local GroupChanged = GS_DisplayedGroup and GS_DisplayedGroup ~= Group
 	if Group ~= "Search" then GS_LastDatabaseGroup = Group; end
-	GS_StartPage = GSX_StartPage
+	GS_StartPage = GroupChanged and 0 or GSX_StartPage
 	if not ( GS_StartPage ) or ( GS_StartPage < 0 ) then GS_StartPage = 0; end
 	
 	GS_DisplayedGroup = Group; GS_DisplayFrame:Hide(); 	GS_DatabaseFrame:Show(); GS_DatabaseDisplayed =  1 
+	local DatabaseTabs = { Party = 1, Guild = 2, Friends = 3, All = 4 }
+	if DatabaseTabs[Group] then PanelTemplates_SetTab(GS_DatabaseFrame, DatabaseTabs[Group]); end
 	if not ( SortType ) then SortType = "GearScore"; end
 	GS_SortedType = SortType
 	LibQTip:Release(GS_DatabaseFrame.tooltip)
@@ -3468,24 +3480,31 @@ function GearScore_DisplayDatabase(Group, SortType, Auto, GSX_StartPage)
 
 
 	local count = 1; local ColorString1 = ""; local ColorString2 = ""; local gsfunc = ""; local PartySize = 0; local GroupType = ""; local FactionColor = nil
-	if not ( GSX_DataBase ) then GSX_DataBase = {}; GSX_DataBase = GearScore_BuildDatabase(Group); Auto = 0; end
-	
+	-- Every view owns a freshly filtered list. Reusing the previous tab's global
+	-- table made the highlighted tab and the displayed records drift apart.
+	GSX_DataBase = GearScore_BuildDatabase(Group)
+
 	if not ( GS_SortDirection ) then GS_SortDirection = {}; end
-	if ( Auto ~= 1 ) then 
+	if ( Auto ~= 1 ) then
 		if ( GS_SortDirection[SortType] ) then GS_SortDirection[SortType] = GS_SortDirection[SortType] * -1; else GS_SortDirection[SortType] = 1; end
-		if ( SortType == "Name" ) then GS_HighlightedColNum = 3; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Name < b.Name end); else table.sort(GSX_DataBase, function(a, b) return a.Name > b.Name end); end; end
-		if ( SortType == "GearScore" ) then GS_HighlightedColNum = 2; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.GearScore > b.GearScore end); else table.sort(GSX_DataBase, function(a, b) return a.GearScore < b.GearScore end); end; end
-		if ( SortType == "iLevel" ) then GS_HighlightedColNum = 4; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Average > b.Average end); else table.sort(GSX_DataBase, function(a, b) return a.Average < b.Average end); end; end
-		if ( SortType == "Level" ) then GS_HighlightedColNum = 5; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return tonumber(a.Level) > tonumber(b.Level) end); else table.sort(GSX_DataBase, function(a, b) return tonumber(a.Level) < tonumber(b.Level) end); end; end
-		if ( SortType == "Guild" ) then GS_HighlightedColNum = 8; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableGuild(a) < GearScore_GetSortableGuild(b) end); else table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableGuild(a) > GearScore_GetSortableGuild(b) end); end; end
-		if ( SortType == "Class" ) then GS_HighlightedColNum = 7; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableClass(a) < GearScore_GetSortableClass(b) end); else table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableClass(a) > GearScore_GetSortableClass(b) end); end; end
-		if ( SortType == "Date" ) then GS_HighlightedColNum = 9; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Date > b.Date end); else table.sort(GSX_DataBase, function(a, b) return a.Date < b.Date end); end; end
-		if ( SortType == "Race" ) then GS_HighlightedColNum = 6; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableRace(a) < GearScore_GetSortableRace(b) end); else table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableRace(a) > GearScore_GetSortableRace(b) end); end; end
-		if ( SortType == "Scanned" ) then GS_HighlightedColNum = 10; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Scanned < b.Scanned end); else table.sort(GSX_DataBase, function(a, b) return a.Scanned > b.Scanned end); end; end
-	end		
-	if ( GS_StartPage > (#(GSX_DataBase))) then GS_StartPage = GS_StartPage - 25; end
+	end
+	if not GS_SortDirection[SortType] then GS_SortDirection[SortType] = 1; end
+	if ( SortType == "Name" ) then GS_HighlightedColNum = 3; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Name < b.Name end); else table.sort(GSX_DataBase, function(a, b) return a.Name > b.Name end); end; end
+	if ( SortType == "GearScore" ) then GS_HighlightedColNum = 2; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.GearScore > b.GearScore end); else table.sort(GSX_DataBase, function(a, b) return a.GearScore < b.GearScore end); end; end
+	if ( SortType == "iLevel" ) then GS_HighlightedColNum = 4; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Average > b.Average end); else table.sort(GSX_DataBase, function(a, b) return a.Average < b.Average end); end; end
+	if ( SortType == "Level" ) then GS_HighlightedColNum = 5; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return tonumber(a.Level) > tonumber(b.Level) end); else table.sort(GSX_DataBase, function(a, b) return tonumber(a.Level) < tonumber(b.Level) end); end; end
+	if ( SortType == "Guild" ) then GS_HighlightedColNum = 8; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableGuild(a) < GearScore_GetSortableGuild(b) end); else table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableGuild(a) > GearScore_GetSortableGuild(b) end); end; end
+	if ( SortType == "Class" ) then GS_HighlightedColNum = 7; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableClass(a) < GearScore_GetSortableClass(b) end); else table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableClass(a) > GearScore_GetSortableClass(b) end); end; end
+	if ( SortType == "Date" ) then GS_HighlightedColNum = 9; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Date > b.Date end); else table.sort(GSX_DataBase, function(a, b) return a.Date < b.Date end); end; end
+	if ( SortType == "Race" ) then GS_HighlightedColNum = 6; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableRace(a) < GearScore_GetSortableRace(b) end); else table.sort(GSX_DataBase, function(a, b) return GearScore_GetSortableRace(a) > GearScore_GetSortableRace(b) end); end; end
+	if ( SortType == "Scanned" ) then GS_HighlightedColNum = 10; if ( GS_SortDirection[SortType] == 1 ) then table.sort(GSX_DataBase, function(a, b) return a.Scanned < b.Scanned end); else table.sort(GSX_DataBase, function(a, b) return a.Scanned > b.Scanned end); end; end
+	if #(GSX_DataBase) == 0 then
+		GS_StartPage = 0
+	elseif GS_StartPage >= #(GSX_DataBase) then
+		GS_StartPage = floor((#(GSX_DataBase) - 1) / 25) * 25
+	end
 	local Recount = GS_StartPage
-	for i,v in pairs(GSX_DataBase) do
+	for i,v in ipairs(GSX_DataBase) do
 	if ( i > GS_StartPage ) then
 		local Red, Green, Blue = GearScore_GetQuality(v.GearScore) 
 		local DisplayRace = GearScore_GetRecordDisplayRace(v)
@@ -3544,21 +3563,37 @@ function GearScore_HideDatabase(erase)
  end
  
  function GearScore_BuildDatabase(Group, Auto)
- 	--print("Compiling Database")
- 	local count = 1; local GSL_DataBase = {}
- 	if ( Group == "Party" ) then 
-	    if ( UnitName("raid1") ) then GroupType = "raid"; PartySize = 40; else GroupType = "party"; PartySize = 5; end
-	    count = 0; for i = 1, PartySize do 
-			if ( GS_Data[GetRealmName()].Players[UnitName(GroupType..i)] ) then 
-				count = count + 1; GSL_DataBase[count] = GS_Data[GetRealmName()].Players[UnitName(GroupType..i)]; 
-			else
-				--GearScore_Request(UnitName(GroupType..i))
-			end; 
-		end
-		if ( GroupType == "party" ) then GSL_DataBase[count+1] = GS_Data[GetRealmName()].Players[UnitName("player")]; end
+	--print("Compiling Database")
+	local count = 0
+	local GSL_DataBase = {}
+	local RealmData = GS_Data and GS_Data[GetRealmName()]
+	local Players = RealmData and RealmData.Players or {}
+	local RecordsByRosterKey = {}
+	local AddedRecords = {}
+
+	for StoredName, Record in pairs(Players) do
+		local RosterKey = GearScore_NormalizeRosterKey(Record.Name or StoredName)
+		if RosterKey and not RecordsByRosterKey[RosterKey] then RecordsByRosterKey[RosterKey] = Record; end
+	end
+
+	local function AddRosterRecord(Name, GuildName)
+		local RosterKey = GearScore_NormalizeRosterKey(Name)
+		local Record = (Name and Players[Name]) or (RosterKey and RecordsByRosterKey[RosterKey])
+		if not Record or AddedRecords[Record] then return; end
+		if GuildName then Record.Guild = GuildName; end
+		AddedRecords[Record] = 1
+		count = count + 1
+		GSL_DataBase[count] = Record
+	end
+
+	if ( Group == "Party" ) then
+		local GroupType = UnitName("raid1") and "raid" or "party"
+		local PartySize = GroupType == "raid" and 40 or 4
+		for i = 1, PartySize do AddRosterRecord(UnitName(GroupType..i)); end
+		if GroupType == "party" then AddRosterRecord(UnitName("player")); end
 	end
 	if ( Group == "All" ) then count = 0;
-		for i,v in pairs(GS_Data[GetRealmName()].Players) do
+		for i,v in pairs(Players) do
             if ( GS_Settings["AutoPrune"] == 1 ) then
 				if ( GearScore_GetDate(v.Date) > (GS_Settings["DatabaseAgeSlider"] or 30 ) ) then
 				    GS_Data[GetRealmName()].Players[i] = nil
@@ -3572,24 +3607,12 @@ function GearScore_HideDatabase(erase)
 	end
 
 	if ( Group == "Guild" ) then
-		count = 0
 		local PlayerGuild = GetGuildInfo("player")
 		if PlayerGuild then
 			if not GS_GuildRosterReadyAt or (GetTime() - GS_GuildRosterReadyAt) > 5 then GuildRoster(); end
-			local RosterNames = {}
 			for i = 1, GetNumGuildMembers(1) do
-				local RosterName = GearScore_NormalizeRosterKey(GetGuildRosterInfo(i))
-				if RosterName then RosterNames[RosterName] = 1; end
-			end
-			for Name, Record in pairs(GS_Data[GetRealmName()].Players) do
-				local RosterKey = GearScore_NormalizeRosterKey(Record.Name or Name)
-				if RosterKey and RosterNames[RosterKey] then
-					-- The live guild roster is authoritative. Cached GearScore records
-					-- can contain an old guild or "*" after a transfer/invite.
-					Record.Guild = PlayerGuild
-					count = count + 1
-					GSL_DataBase[count] = Record
-				end
+				-- The live roster is authoritative; cached guild fields can be stale.
+				AddRosterRecord(GetGuildRosterInfo(i), PlayerGuild)
 			end
 		end
 	end
@@ -3599,13 +3622,16 @@ function GearScore_HideDatabase(erase)
 		Query = string.gsub(Query or "", "^%s+", "")
 		Query = string.gsub(Query, "%s+$", "")
 		if Query ~= "" then
-			for i,v in pairs(GS_Data[GetRealmName()].Players) do
+			for i,v in pairs(Players) do
 				local DataString = tostring((v.GearScore or 0)..(v.Name or "")..(v.Level or "")..GearScore_GetRecordGuild(v)..GearScore_GetRecordDisplayClass(v)..GearScore_GetRecordDisplayRace(v))
 				if string.find(strlower(DataString), strlower(Query), 1, true) then count = count + 1; GSL_DataBase[count] = v; end
 			end
 		end
 	end
-    if ( Group == "Friends" ) then count = 0; for i = 1, GetNumFriends(1) do local FriendName = GearScore_NormalizeRosterName(GetFriendInfo(i)); if FriendName and GS_Data[GetRealmName()].Players[FriendName] then count = count + 1; GSL_DataBase[count] = GS_Data[GetRealmName()].Players[FriendName]; end; end; end
+	if ( Group == "Friends" ) then
+		count = 0
+		for i = 1, GetNumFriends(1) do AddRosterRecord(GetFriendInfo(i)); end
+	end
 	
 	if Group == "All" then GSDatabaseInfoString:SetText("База: "..count.." записів. (прибл. "..floor(0.8372131704586988304093567251462 * count).." КБ)"); GS_Settings["DatabaseSize"] = count;
 	else GSDatabaseInfoString:SetText("У цій вкладці: "..count.." записів.")
@@ -3731,6 +3757,9 @@ f:RegisterEvent("CHAT_MSG_ADDON");
 f:RegisterEvent("PLAYER_TARGET_CHANGED")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("GUILD_ROSTER_UPDATE")
+f:RegisterEvent("PARTY_MEMBERS_CHANGED")
+f:RegisterEvent("RAID_ROSTER_UPDATE")
+f:RegisterEvent("FRIENDLIST_UPDATE")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("PLAYER_REGEN_DISABLED")
 GameTooltip:HookScript("OnTooltipSetUnit", GearScore_HookSetUnit)
